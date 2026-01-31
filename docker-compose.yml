@@ -26,6 +26,17 @@ services:
       - acme:/etc/acme.sh
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
+  climb-buddy:
+    image: climb-buddy:v0.0.1
+    container_name: climb-buddy
+    environment:
+      - VIRTUAL_HOST=example.com
+      - VIRTUAL_PORT=8000
+      - LETSENCRYPT_HOST=example.com
+      - LETSENCRYPT_EMAIL=admin@example.io
+    volumes:
+      - ./data.db:/app/data.db
+
 networks:
   default:
       name: nginx-proxy-net

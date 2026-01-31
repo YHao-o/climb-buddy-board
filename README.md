@@ -33,14 +33,6 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 docker build . -t climb-buddy:v0.0.1
 docker compose up -d 
-docker run -d \
-    --name climb-buddy \
-    --network nginx-proxy-net \
-    --env "VIRTUAL_HOST=example.com" \
-    --env "VIRTUAL_PORT=8000" \
-    --env "LETSENCRYPT_HOST=example.com" \
-    --env "LETSENCRYPT_EMAIL=admin@example.io" \
-    climb-buddy:v0.0.1
 ```
 
 ### 说明
