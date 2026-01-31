@@ -74,7 +74,7 @@
     <section class="events-grid">
       {% for e in upcoming %}
       <article class="event-card">
-        {% set share_url = 'https://panyanfor.fun/events/' ~ e.id %}
+        {% set share_url = base_url and (base_url.rstrip('/') ~ '/events/' ~ e.id) or ('/events/' ~ e.id) %}
         {% set participants_text = (e.participants|length > 0) and ('- ' ~ e.participants|join('\\n- ')) or '暂无' %}
         {% set share_text = '🧗 约攀邀请\\n时间：' ~ e.start_text_weekday ~ '\\n地点：' ~ e.location ~ '\\n发起人：' ~ (e.host_nickname or
         e.nickname) ~ '\\n已报名：' ~ (e.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url %}
@@ -138,7 +138,7 @@
     <section class="events-grid">
       {% for e in expired %}
       <article class="event-card event-card--expired">
-        {% set share_url = 'https://panyanfor.fun/events/' ~ e.id %}
+        {% set share_url = base_url and (base_url.rstrip('/') ~ '/events/' ~ e.id) or ('/events/' ~ e.id) %}
         {% set participants_text = (e.participants|length > 0) and ('- ' ~ e.participants|join('\\n- ')) or '暂无' %}
         {% set share_text = '🧗 约攀邀请\\n时间：' ~ e.start_text_weekday ~ '\\n地点：' ~ e.location ~ '\\n发起人：' ~ (e.host_nickname or
         e.nickname) ~ '\\n已报名：' ~ (e.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url %}
@@ -187,13 +187,13 @@
 </section>
 {% endif %}
 
-{% set board_base_url = base_url if base_url else 'https://panyanfor.fun' %}
+{% set board_base_url = base_url if base_url else 'http://120.79.176.134:8000' %}
 {% set ns = namespace(text='本村周历') %}
 {% for day in week_board %}
   {% set ns.text = ns.text ~ '\\n\\n' ~ day.title %}
   {% if day["items"]|length > 0 %}
     {% for item in day["items"] %}
-      {% set ns.text = ns.text ~ '\\n- 时间：' ~ item.full_time ~ ' 地点：' ~ item.location %}
+      {% set ns.text = ns.text ~ '\\n- 时间：' ~ item.time_text ~ ' 地点：' ~ item.location %}
       {% if item.is_active %}
         {% set detail_url = board_base_url ~ item.detail_url %}
         {% set ns.text = ns.text ~ ' 报名：' ~ detail_url %}
@@ -222,7 +222,7 @@
           {% for item in day["items"] %}
           <div class="week-day__item">
             <span class="week-day__period">{{ item.period }}：</span>
-            <span class="week-day__time">{{ item.full_time }}</span>
+            <span class="week-day__time">{{ item.time_text }}</span>
             <span class="week-day__location">{{ item.location }}</span>
             {% if item.is_active %}
             {% set detail_url = board_base_url ~ item.detail_url %}
