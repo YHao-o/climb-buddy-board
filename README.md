@@ -28,6 +28,20 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 打开 `http://127.0.0.1:8000/` 即可浏览。
 
+### docker
+
+```bash
+docker build . -t climb-buddy:v0.0.1
+docker compose up -d 
+docker run -d \
+    --name climb-buddy \
+    --env "VIRTUAL_HOST=example.com" \
+    --env "VIRTUAL_PORT=80" \
+    --env "LETSENCRYPT_HOST=example.com" \
+    --env "LETSENCRYPT_EMAIL=admin@example.com" \
+    climb-buddy:v0.0.1
+```
+
 ### 说明
 
 - **主页是约攀**：访问 `/`（或 `/events`）进入“约攀接龙报名”主页。
