@@ -28,7 +28,9 @@ IMAGES_DIR = ROOT / "图片"
 ASSETS_DIR = ROOT / "static"
 TEMPLATES_DIR = ROOT / "templates"
 DB_PATH = ROOT / "data.db"
-BASE_URL = os.getenv("GUIDE_BASE_URL", "").strip()
+# 站点基础地址（用于生成邀请/复制链接）
+BASE_URL ="http://120.79.176.134:8000"
+
 
 SETTING_SHOES_TIPS = "guide_shoes_tips"
 SETTING_TICKET_TIPS = "guide_ticket_tips"
