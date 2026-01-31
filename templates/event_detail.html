@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% set share_path = request.url_for('event_detail', event_id=event.id) %}
-{% set share_url = base_url and (base_url.rstrip('/') ~ share_path) or share_path %}
+{# 详情页分享链接：统一使用 base_url 拼接，保证带域名 #}
+{% set share_base_url = base_url if base_url else 'http://120.79.176.134:8000' %}
+{% set share_url = share_base_url.rstrip('/') ~ '/events/' ~ event.id %}
 {% set participants_text = (event.participants|length > 0) and ('- ' ~ event.participants|join('\\n- ')) or '暂无' %}
 {% set share_text = '🧗 约攀邀请\\n时间：' ~ event.start_text_weekday ~ '\\n地点：' ~ event.location ~ '\\n发起人：' ~ (event.host_nickname or
 event.nickname) ~ '\\n已报名：' ~ (event.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url
