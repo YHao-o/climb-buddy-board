@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h1 class="hero__title">🧗 约攀</h1>
+  <p class="hero__subtitle">找搭子一起爬，互相打气进步更快！</p>
+</section>
+
+    <div class="info-badges">
+      <span class="info-badge">
+        <span class="info-badge__icon">📅</span>
+        可预约未来 5 天
+      </span>
+      <span class="info-badge">
+        <span class="info-badge__icon">✏️</span>
+        任何人可发起/删除
+      </span>
+      <span class="info-badge">
+        <span class="info-badge__icon">⏰</span>
+        过期自动标红
+      </span>
+    </div>
+
+    {% if err %}
+    <div class="alert alert--error">
+      <span class="alert__icon">⚠️</span>
+      <span class="alert__text">{{ err }}</span>
+    </div>
+    {% endif %}
+
+    {% if msg %}
+    <div class="alert alert--success">
+      <span class="alert__icon">✅</span>
+      <span class="alert__text">{{ msg }}</span>
+    </div>
+    {% endif %}
+
+    <section class="form-card">
+      <h2 class="form-card__title">发起一个约攀</h2>
+      <form method="post" action="/events/new">
+        <div class="form-grid">
+          <label class="field">
+            <span class="field__label">时间</span>
+            <input class="input" type="datetime-local" name="when" required />
+          </label>
+          <label class="field">
+            <span class="field__label">地点</span>
+            <input class="input" name="location" placeholder="香蕉 / 岩时 / 户外点…" required />
+          </label>
+          <label class="field">
+            <span class="field__label">你的昵称</span>
+            <input class="input" name="nickname" placeholder="群昵称" required />
+          </label>
+          <button class="btn btn--primary" type="submit">🎯 发布</button>
+          <a class="btn btn--secondary" href="/">清空</a>
+        </div>
+      </form>
+    </section>
+
+    <section class="summary">
+      <div class="summary__stats">
+        <div class="stat">
+          <span class="stat__value">{{ upcoming|length }}</span>
+          <span class="stat__label">进行中</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value">{{ expired|length }}</span>
+          <span class="stat__label">已过期</span>
+        </div>
+      </div>
+    </section>
+
+    {% if upcoming|length > 0 %}
+    <section class="events-grid">
+      {% for e in upcoming %}
+      <article class="event-card">
+        {% set share_url = 'https://panyanfor.fun/events/' ~ e.id %}
+        {% set participants_text = (e.participants|length > 0) and ('- ' ~ e.participants|join('\\n- ')) or '暂无' %}
+        {% set share_text = '🧗 约攀邀请\\n时间：' ~ e.start_text_weekday ~ '\\n地点：' ~ e.location ~ '\\n发起人：' ~ (e.host_nickname or
+        e.nickname) ~ '\\n已报名：' ~ (e.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url %}
+        <div class="event-card__header">
+          <div class="event-card__time">{{ e.start_text_weekday }}</div>
+          <span class="event-card__status event-card__status--active">进行中</span>
+        </div>
+
+        <div class="event-card__body">
+          <div class="event-card__location">{{ e.location }}</div>
+          <div class="event-card__host">
+            发起人：<strong>{{ e.host_nickname or e.nickname }}</strong>
+          </div>
+        </div>
+
+        <div class="participants">
+          <div class="participants__title">已报名 ({{ e.participants|length }}人)</div>
+
+          {% if e.participants|length > 0 %}
+          <div class="participants__list">
+            {% for p in e.participants %}
+            <span class="participant">
+              {{ p }}
+              <form method="post" action="/events/{{ e.id }}/leave" class="inline"
+                data-confirm="确认取消报名？&#10;活动：{{ e.start_text }}｜{{ e.location }}&#10;昵称：{{ p }}">
+                <input type="hidden" name="nickname" value="{{ p }}" />
+                <button type="submit" class="participant__remove" title="取消报名">×</button>
+              </form>
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="participants__empty">暂无人报名，快来第一个！</p>
+          {% endif %}
+
+          <form method="post" action="/events/{{ e.id }}/join" class="participants__join">
+            <input class="input" name="nickname" placeholder="我也要去（填昵称）" required />
+            <button class="btn btn--primary btn--small" type="submit">🙋 报名</button>
+          </form>
+        </div>
+
+        <div class="event-card__actions">
+          <button class="btn btn--ghost btn--small" type="button" data-invite-text="{{ share_text|e }}">📣 邀请</button>
+          <form method="post" action="/events/{{ e.id }}/delete" class="inline"
+            data-confirm="确认删除这条活动？&#10;{{ e.start_text }}｜{{ e.location }}｜{{ e.host_nickname or e.nickname }}">
+            <button class="btn btn--ghost btn--small" type="submit">🗑️ 删除</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if expired|length > 0 %}
+    <div class="section-divider">
+      <span class="section-divider__line"></span>
+      <span class="section-divider__text">已过期</span>
+      <span class="section-divider__line"></span>
+    </div>
+
+    <section class="events-grid">
+      {% for e in expired %}
+      <article class="event-card event-card--expired">
+        {% set share_url = 'https://panyanfor.fun/events/' ~ e.id %}
+        {% set participants_text = (e.participants|length > 0) and ('- ' ~ e.participants|join('\\n- ')) or '暂无' %}
+        {% set share_text = '🧗 约攀邀请\\n时间：' ~ e.start_text_weekday ~ '\\n地点：' ~ e.location ~ '\\n发起人：' ~ (e.host_nickname or
+        e.nickname) ~ '\\n已报名：' ~ (e.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url %}
+        <div class="event-card__header">
+          <div class="event-card__time">{{ e.start_text_weekday }}</div>
+          <span class="event-card__status event-card__status--expired">已过期</span>
+        </div>
+
+        <div class="event-card__body">
+          <div class="event-card__location">{{ e.location }}</div>
+          <div class="event-card__host">
+            发起人：<strong>{{ e.host_nickname or e.nickname }}</strong>
+          </div>
+        </div>
+
+        <div class="participants">
+          <div class="participants__title">参与者 ({{ e.participants|length }}人)</div>
+
+          {% if e.participants|length > 0 %}
+          <div class="participants__list">
+            {% for p in e.participants %}
+            <span class="participant">{{ p }}</span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="participants__empty">—</p>
+          {% endif %}
+        </div>
+
+        <div class="event-card__actions">
+          <form method="post" action="/events/{{ e.id }}/delete" class="inline"
+            data-confirm="确认删除这条活动？&#10;{{ e.start_text }}｜{{ e.location }}｜{{ e.host_nickname or e.nickname }}">
+            <button class="btn btn--ghost btn--small" type="submit">🗑️ 删除</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+{% if upcoming|length == 0 and expired|length == 0 %}
+<section class="empty-state">
+  <div class="empty-state__icon">🏔️</div>
+  <h3 class="empty-state__title">还没有约攀活动</h3>
+  <p class="empty-state__text">成为第一个发起约攀的人吧！</p>
+</section>
+{% endif %}
+
+{% set board_base_url = base_url if base_url else 'https://panyanfor.fun' %}
+{% set ns = namespace(text='本村周历') %}
+{% for day in week_board %}
+  {% set ns.text = ns.text ~ '\\n\\n' ~ day.title %}
+  {% if day["items"]|length > 0 %}
+    {% for item in day["items"] %}
+      {% set ns.text = ns.text ~ '\\n- 时间：' ~ item.full_time ~ ' 地点：' ~ item.location %}
+      {% if item.is_active %}
+        {% set detail_url = board_base_url ~ item.detail_url %}
+        {% set ns.text = ns.text ~ ' 报名：' ~ detail_url %}
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    {% set ns.text = ns.text ~ '\\n- 暂无安排' %}
+  {% endif %}
+{% endfor %}
+
+<aside class="week-board-float" aria-label="本村周历">
+  <section class="week-board">
+    <div class="week-board__header">
+      <div>
+        <h2 class="week-board__title">本村周历</h2>
+        <p class="week-board__subtitle">仅展示本周</p>
+      </div>
+      <button class="btn btn--ghost btn--small" type="button" data-copy-text="{{ ns.text|e }}">一键复制</button>
+    </div>
+    <div class="week-board__body">
+      {% for day in week_board %}
+      <div class="week-day">
+        <div class="week-day__title">{{ day.title }}</div>
+        {% if day["items"]|length > 0 %}
+        <div class="week-day__items">
+          {% for item in day["items"] %}
+          <div class="week-day__item">
+            <span class="week-day__period">{{ item.period }}：</span>
+            <span class="week-day__time">{{ item.full_time }}</span>
+            <span class="week-day__location">{{ item.location }}</span>
+            {% if item.is_active %}
+            {% set detail_url = board_base_url ~ item.detail_url %}
+            <a class="link week-day__link" href="{{ detail_url }}">报名</a>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="week-day__empty">暂无安排</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</aside>
+
+{% endblock %}

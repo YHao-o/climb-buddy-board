@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if not excel_exists %}
+<section class="callout callout--warn">
+  <div class="callout__title">⚠️ 未找到数据文件</div>
+  <div class="callout__body">
+    请确认 Excel 文件放在与 <code>main.py</code> 同级目录，文件名为 <code>深圳市爬墙区新手村指南.xlsx</code>
+  </div>
+</section>
+{% endif %}
+
+{% if workbook.sheets|length == 0 %}
+<section class="empty-state">
+  <div class="empty-state__icon">📄</div>
+  <h3 class="empty-state__title">暂无数据</h3>
+  <p class="empty-state__text">如果刚放入 Excel，刷新页面即可。</p>
+</section>
+{% else %}
+
+<section class="sheetbar">
+  <div class="sheetbar__label">工作表</div>
+  <nav class="tabs" aria-label="工作表切换">
+    {% for s in workbook.sheets %}
+    {% set active = (s.name == active_sheet) %}
+    <a class="tab {{ 'tab--active' if active else '' }}"
+      href="{{ base_path }}?sheet={{ s.name|urlencode }}&q={{ q|urlencode }}&column={{ column|urlencode }}&value={{ value|urlencode }}&view={{ view }}{% if edit %}&edit=1{% endif %}">
+      {{ s.name }}
+    </a>
+    {% endfor %}
+  </nav>
+</section>
+
+{% set controls_open = (q or column or value or edit) %}
+<details class="collapse" {% if controls_open %}open{% endif %}>
+  <summary>
+    <span>🔍 搜索 / 筛选 / 切换视图</span>
+    <span class="collapse__hint">展开</span>
+  </summary>
+  <div class="collapse__body">
+    <section class="toolbar" style="margin-top:0;">
+      <form class="search" method="get" action="{{ base_path }}">
+        <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+        <input type="hidden" name="view" value="{{ view }}" />
+        {% if edit %}
+        <input type="hidden" name="edit" value="1" />
+        {% endif %}
+
+        <div class="search__row">
+          <label class="field">
+            <span class="field__label">关键词</span>
+            <input class="input" name="q" value="{{ q }}" placeholder="装备 / 报名 / 保护 / 场馆…" />
+          </label>
+
+          <label class="field">
+            <span class="field__label">按列筛选</span>
+            <select class="select" name="column">
+              <option value="" {% if not column %}selected{% endif %}>（不筛选）</option>
+              {% if sheet %}
+              {% for c in sheet.columns %}
+              <option value="{{ c }}" {% if column==c %}selected{% endif %}>{{ c }}</option>
+              {% endfor %}
+              {% endif %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">包含值</span>
+            <input class="input" name="value" value="{{ value }}" placeholder="筛选值" />
+          </label>
+
+          <button class="btn btn--primary" type="submit">搜索</button>
+          <a class="btn btn--secondary"
+            href="{{ base_path }}?sheet={{ active_sheet|urlencode }}&view={{ view }}{% if edit %}&edit=1{% endif %}">清空</a>
+        </div>
+      </form>
+
+      <div class="viewtoggle" aria-label="视图切换">
+        <a class="btn {{ 'btn--active' if view == 'cards' else 'btn--ghost' }}"
+          href="{{ base_path }}?sheet={{ active_sheet|urlencode }}&q={{ q|urlencode }}&column={{ column|urlencode }}&value={{ value|urlencode }}&view=cards{% if edit %}&edit=1{% endif %}">
+          🃏 卡片
+        </a>
+        <a class="btn {{ 'btn--active' if view == 'table' else 'btn--ghost' }}"
+          href="{{ base_path }}?sheet={{ active_sheet|urlencode }}&q={{ q|urlencode }}&column={{ column|urlencode }}&value={{ value|urlencode }}&view=table{% if edit %}&edit=1{% endif %}">
+          📊 表格
+        </a>
+      </div>
+    </section>
+  </div>
+</details>
+
+<section class="summary">
+  <div class="summary__stats">
+    <div class="stat">
+      <span class="stat__value">{{ rows|length }}</span>
+      <span class="stat__label">条结果</span>
+    </div>
+  </div>
+  <div class="summary__actions">
+    {% if enable_edit %}
+    {% if edit %}
+    <a class="btn btn--secondary btn--small"
+      href="{{ base_path }}?sheet={{ active_sheet|urlencode }}&q={{ q|urlencode }}&column={{ column|urlencode }}&value={{ value|urlencode }}&view={{ view }}">
+      退出编辑
+    </a>
+    {% else %}
+    <a class="btn btn--secondary btn--small"
+      href="{{ base_path }}?sheet={{ active_sheet|urlencode }}&q={{ q|urlencode }}&column={{ column|urlencode }}&value={{ value|urlencode }}&view={{ view }}&edit=1">
+      ✏️ 进入编辑
+    </a>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+{% if err %}
+<section class="callout callout--warn">
+  <div class="callout__title">⚠️ 保存失败</div>
+  <div class="callout__body">{{ err }}</div>
+</section>
+{% endif %}
+
+{% if edit %}
+<section class="callout">
+  <div class="callout__title">✏️ 编辑模式</div>
+  <div class="callout__body">
+    <form class="inline" method="post" action="/row/new?sheet={{ active_sheet|urlencode }}">
+      <button class="btn btn--primary" type="submit">➕ 新增一行</button>
+    </form>
+    <p class="muted mt-2">提示：改动会立即保存到数据库</p>
+  </div>
+</section>
+
+<section class="callout">
+  <div class="callout__title">📝 内容维护</div>
+  <div class="callout__body">
+    <form class="editform" method="post" action="/guide/settings/update">
+      <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+      <input type="hidden" name="q" value="{{ q }}" />
+      <input type="hidden" name="column" value="{{ column }}" />
+      <input type="hidden" name="value" value="{{ value }}" />
+      <input type="hidden" name="view" value="{{ view }}" />
+      <input type="hidden" name="shoes_tips_version" value="{{ shoes_tips_version }}" />
+      <input type="hidden" name="ticket_tips_version" value="{{ ticket_tips_version }}" />
+
+      <label class="field">
+        <span class="field__label">👟 攀岩鞋选购建议（每行一条）</span>
+        <textarea class="input" name="shoes_tips" rows="5">{{ shoes_tips_text }}</textarea>
+      </label>
+      <label class="field">
+        <span class="field__label">🎫 门票便宜购买途径（每行一条）</span>
+        <textarea class="input" name="ticket_tips" rows="5">{{ ticket_tips_text }}</textarea>
+      </label>
+
+      <div class="editform__actions">
+        <button class="btn btn--primary" type="submit">💾 保存</button>
+      </div>
+    </form>
+    <p class="muted mt-2">多人同时编辑时，保存会提示冲突，请刷新后重试。</p>
+  </div>
+</section>
+{% endif %}
+
+{% if sheet and sheet.image_column %}
+<section class="callout">
+  <div class="callout__title">📷 上传图片</div>
+  <div class="callout__body">
+    <p class="muted">上传后将文件名填入「{{ sheet.image_column }}」列即可展示</p>
+    <form class="upload" action="/upload?sheet={{ active_sheet|urlencode }}" method="post"
+      enctype="multipart/form-data">
+      <input class="input" type="file" name="file" accept="image/*" required style="flex:1;" />
+      <button class="btn btn--primary" type="submit">上传</button>
+    </form>
+    {% if uploaded %}
+    <div class="upload__result">
+      ✅ 已上传：<code>{{ uploaded }}</code>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if "攀岩鞋" in active_sheet %}
+<section class="callout">
+  <div class="callout__title">👟 攀岩鞋选购建议</div>
+  <div class="callout__body">
+    <ul class="list">
+      {% if shoes_tips_lines|length == 0 %}
+      <li class="muted">暂无内容</li>
+      {% else %}
+      {% for tip in shoes_tips_lines %}
+      <li>{{ tip }}</li>
+      {% endfor %}
+      {% endif %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+{% if "岩馆" in active_sheet %}
+<section class="callout">
+  <div class="callout__title">🎫 门票便宜购买途径</div>
+  <div class="callout__body">
+    <ul class="list">
+      {% if ticket_tips_lines|length == 0 %}
+      <li class="muted">暂无内容</li>
+      {% else %}
+      {% for tip in ticket_tips_lines %}
+      <li>{{ tip }}</li>
+      {% endfor %}
+      {% endif %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+{% if rows|length == 0 %}
+<section class="empty-state">
+  <div class="empty-state__icon">🔍</div>
+  <h3 class="empty-state__title">没有匹配结果</h3>
+  <p class="empty-state__text">换个关键词试试，或清空筛选条件</p>
+</section>
+{% else %}
+
+{% if view == "table" %}
+<section class="tablewrap">
+  <table class="table">
+    <thead>
+      <tr>
+        {% if sheet and sheet.image_column %}
+        <th class="table__th table__th--img">图片</th>
+        {% endif %}
+        {% if edit %}
+        <th class="table__th table__th--img">操作</th>
+        {% endif %}
+        {% if sheet %}
+        {% for c in sheet.columns %}
+        <th class="table__th">{{ c }}</th>
+        {% endfor %}
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        {% if sheet and sheet.image_column %}
+        <td class="table__td table__td--img">
+          {% if images_mounted and r.get('__image__') %}
+          <a class="link" href="/images/{{ r.get('__image__')|urlencode }}" target="_blank">查看</a>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        {% endif %}
+        {% if edit %}
+        {% set ns = namespace(items=[]) %}
+        {% if sheet %}
+        {% for c in sheet.columns %}
+        {% if ns.items|length < 2 %} {% set v=r.get(c) %} {% if v is not none and v !='' %} {% set ns.items=ns.items +
+          [c ~ '：' ~ v] %} {% endif %} {% endif %} {% endfor %} {% endif %} <td class="table__td table__td--img">
+          <a class="link" href="/row/{{ r.get('__id__') }}/edit?sheet={{ active_sheet|urlencode }}">编辑</a>
+          <form method="post" action="/row/{{ r.get('__id__') }}/delete?sheet={{ active_sheet|urlencode }}"
+            class="inline" data-confirm="确认删除这条记录？&#10;{{ (ns.items|join('；') if ns.items|length > 0 else '（无内容）') }}">
+            <button class="linkbtn" type="submit">删除</button>
+          </form>
+          </td>
+          {% endif %}
+          {% if sheet %}
+          {% for c in sheet.columns %}
+          <td class="table__td">{{ r.get(c)|linkify }}</td>
+          {% endfor %}
+          {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="cards">
+  {% for r in rows %}
+  <article class="card">
+    {% if sheet and sheet.image_column and images_mounted and r.get('__image__') %}
+    <a class="card__media" href="/images/{{ r.get('__image__')|urlencode }}" target="_blank">
+      <img class="card__img" src="/images/{{ r.get('__image__')|urlencode }}" alt="{{ r.get('__image__') }}"
+        loading="lazy" />
+    </a>
+    {% endif %}
+
+    <div class="card__body">
+      {% if edit %}
+      {% set ns = namespace(items=[]) %}
+      {% if sheet %}
+      {% for c in sheet.columns %}
+      {% if ns.items|length < 2 %} {% set v=r.get(c) %} {% if v is not none and v !='' %} {% set ns.items=ns.items + [c
+        ~ '：' ~ v] %} {% endif %} {% endif %} {% endfor %} {% endif %} <div class="card__actions">
+        <a class="btn btn--secondary btn--small"
+          href="/row/{{ r.get('__id__') }}/edit?sheet={{ active_sheet|urlencode }}">✏️ 编辑</a>
+        <form method="post" action="/row/{{ r.get('__id__') }}/delete?sheet={{ active_sheet|urlencode }}"
+          data-confirm="确认删除这条记录？&#10;{{ (ns.items|join('；') if ns.items|length > 0 else '（无内容）') }}">
+          <button class="btn btn--secondary btn--small" type="submit">🗑️ 删除</button>
+        </form>
+    </div>
+    {% endif %}
+    <dl class="kv">
+      {% if sheet %}
+      {% for c in sheet.columns %}
+      {% set v = r.get(c) %}
+      {% if v is not none and v != '' %}
+      <div class="kv__row">
+        <dt class="kv__k">{{ c }}</dt>
+        <dd class="kv__v">{{ v|linkify }}</dd>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+    </dl>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% endif %}
+{% endif %}
+{% endblock %}

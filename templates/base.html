@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1419" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>{{ title }}</title>
+  <link rel="icon" href="/static/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    /* Critical inline styles for fast load */
+    body {
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <div class="brand__title">{{ title }}</div>
+        <div class="brand__subtitle">群友共创 · 一起攀登 🧗‍♀️</div>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav__link {{ 'nav__link--active' if request.url.path == '/' or request.url.path.startswith('/events') else '' }}"
+          href="/">
+          🗓️ 约攀
+        </a>
+        <a class="nav__link {{ 'nav__link--active' if request.url.path.startswith('/guide') else '' }}" href="/guide">
+          📖 指南
+        </a>
+      </nav>
+
+      <div class="topbar__meta">
+        <span class="pill">开放编辑</span>
+        {% if excel_exists %}
+        <span class="pill">数据已加载</span>
+        {% else %}
+        <span class="pill pill--warn">数据未加载</span>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div>© 深圳爬墙区新手村 · 攀岩社区</div>
+      <div class="footer__links">
+        <a class="link" href="/healthz" target="_blank" rel="noopener noreferrer">系统状态</a>
+      </div>
+    </div>
+  </footer>
+
+  <div class="modal" id="confirm-modal" aria-hidden="true" hidden>
+    <div class="modal__backdrop" data-action="close"></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="modal__header" id="confirm-title">请确认</div>
+      <div class="modal__body" id="confirm-message"></div>
+      <div class="modal__actions">
+        <button class="btn btn--secondary" type="button" data-action="close">取消</button>
+        <button class="btn btn--primary" type="button" data-action="confirm">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Smooth page transitions
+    document.addEventListener('DOMContentLoaded', () => {
+      const modal = document.getElementById('confirm-modal')
+      const modalMessage = document.getElementById('confirm-message')
+      let pendingForm = null
+
+      const closeModal = () => {
+        if (!modal) return
+        modal.classList.remove('modal--open')
+        modal.setAttribute('hidden', '')
+        modal.setAttribute('aria-hidden', 'true')
+        pendingForm = null
+      }
+
+      const openModal = (message, form) => {
+        if (!modal || !modalMessage) return false
+        modalMessage.textContent = message
+        modal.classList.add('modal--open')
+        modal.removeAttribute('hidden')
+        modal.setAttribute('aria-hidden', 'false')
+        pendingForm = form
+        return true
+      }
+
+      if (modal) {
+        modal.addEventListener('click', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const action = target.dataset.action
+          if (action === 'close') {
+            closeModal()
+          }
+          if (action === 'confirm' && pendingForm) {
+            const form = pendingForm
+            closeModal()
+            form.submit()
+          }
+        })
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            closeModal()
+          }
+        })
+      }
+
+      // Add loading state to forms
+      document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function (event) {
+          const confirmText = this.dataset.confirm
+          if (confirmText) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (!openModal(confirmText, this)) {
+              if (window.confirm(confirmText)) {
+                this.submit()
+              }
+            }
+            return
+          }
+          const btn = this.querySelector('button[type="submit"]')
+          if (btn) {
+            btn.disabled = true
+            btn.innerHTML = '<span class="spinner"></span> 处理中...'
+          }
+        })
+      })
+
+      // Copy invite text to clipboard
+      document.querySelectorAll('[data-invite-text]').forEach(button => {
+        button.addEventListener('click', async () => {
+          const raw = button.dataset.inviteText || ''
+          const text = raw.replace(/\\n/g, '\n')
+          const original = button.innerHTML
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text)
+            } else {
+              throw new Error('Clipboard not available')
+            }
+            button.innerHTML = '✅ 已复制'
+            setTimeout(() => {
+              button.innerHTML = original
+            }, 1500)
+          } catch (err) {
+            window.prompt('复制邀请信息', text)
+          }
+        })
+      })
+
+      // Copy arbitrary text to clipboard
+      document.querySelectorAll('[data-copy-text]').forEach(button => {
+        button.addEventListener('click', async () => {
+          const raw = button.dataset.copyText || ''
+          const text = raw.replace(/\\n/g, '\n')
+          const original = button.innerHTML
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text)
+            } else {
+              throw new Error('Clipboard not available')
+            }
+            button.innerHTML = '✅ 已复制'
+            setTimeout(() => {
+              button.innerHTML = original
+            }, 1500)
+          } catch (err) {
+            window.prompt('复制内容', text)
+          }
+        })
+      })
+    });
+  </script>
+</body>
+
+</html>

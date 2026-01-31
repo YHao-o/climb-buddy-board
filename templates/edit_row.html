@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="sheetbar">
+  <div class="sheetbar__label">返回</div>
+  <nav class="tabs" aria-label="返回导航">
+    <a class="tab tab--active" href="/?sheet={{ sheet_name|urlencode }}&edit=1">← 返回 {{ sheet_name }}</a>
+  </nav>
+</section>
+
+<section class="form-card">
+  <h2 class="form-card__title" style="margin-bottom: 24px;">编辑行 #{{ row_id }}</h2>
+
+  <form class="editform" method="post" action="/row/{{ row_id }}/edit?sheet={{ sheet_name|urlencode }}">
+    {% for c in sheet.columns %}
+    <label class="field">
+      <span class="field__label">{{ c }}</span>
+      <input class="input" name="{{ c }}" value="{{ (data.get(c) or '') }}" />
+    </label>
+    {% endfor %}
+
+    <div class="editform__actions">
+      <button class="btn btn--primary" type="submit">💾 保存</button>
+      <a class="btn btn--secondary" href="/?sheet={{ sheet_name|urlencode }}&edit=1">取消</a>
+    </div>
+  </form>
+</section>
+
+{% if sheet and sheet.image_column %}
+<section class="callout">
+  <div class="callout__title">📷 图片提示</div>
+  <div class="callout__body">
+    <p>图片列是「<strong>{{ sheet.image_column }}</strong>」</p>
+    <p class="muted mt-2">将上传后的文件名填到该字段（如 <code>abc.png</code>），页面会自动展示图片。</p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
