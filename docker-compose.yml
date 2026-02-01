@@ -18,7 +18,10 @@ services:
     image: nginxproxy/acme-companion:2.6.2
     container_name: nginx-proxy-acme
     environment:
-      - DEFAULT_EMAIL=admin@example.com
+      DEFAULT_EMAIL: admin@example.com
+      ACME_CHALLENGE: DNS-01
+      ACMESH_DNS_API_CONFIG: '{"DNS_API":"dns_cf","CF_Key":"yourCloudflareGlobalAPIKey","CF_Email":"yourCloudflareEmail"}'
+
     volumes_from:
       - nginx-proxy
     volumes:
@@ -33,9 +36,9 @@ services:
       - VIRTUAL_HOST=example.com
       - VIRTUAL_PORT=8000
       - LETSENCRYPT_HOST=example.com
-      - LETSENCRYPT_EMAIL=admin@example.io
+      - LETSENCRYPT_EMAIL=admin@example.com
     volumes:
-      - ./data.db:/app/data.db
+      - .:/app
 
 networks:
   default:
