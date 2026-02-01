@@ -6,6 +6,9 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY static static
+COPY templates templates
+COPY *.py .
+COPY *.xlsx .
 
 CMD ["python", "main.py"]
