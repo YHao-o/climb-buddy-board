@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h1 class="hero__title"><span class="hero__emoji" aria-hidden="true">📚</span><span
+      class="hero__title-text">群图书馆</span></h1>
+  <p class="hero__subtitle">群友共享资料库，知识就是力量</p>
+</section>
+
+<div class="info-badges">
+  <span class="info-badge">
+    <span class="info-badge__icon">📄</span>
+    支持 {{ allowed_types }}
+  </span>
+  <span class="info-badge">
+    <span class="info-badge__icon">⬆️</span>
+    单个文件最大 {{ max_size_mb }}MB
+  </span>
+  <span class="info-badge">
+    <span class="info-badge__icon">📊</span>
+    今日已传 {{ today_uploads }}/{{ max_daily_uploads }}
+  </span>
+</div>
+
+<form class="library-search" method="get" action="/library" role="search" aria-label="文档搜索">
+  <div class="library-search__inner">
+    <input class="input library-search__input" type="search" name="q" value="{{ q|e }}"
+      placeholder="搜索文件名关键词（支持空格分词）" />
+    {% if q %}
+    <a class="btn btn--secondary library-search__clear" href="/library">清空</a>
+    {% endif %}
+    <button class="btn btn--primary library-search__btn" type="submit">🔎 搜索</button>
+  </div>
+</form>
+
+{% if err %}
+<div class="alert alert--error">
+  <span class="alert__icon">⚠️</span>
+  <span class="alert__text">{{ err }}</span>
+</div>
+{% endif %}
+
+{% if msg %}
+<div class="alert alert--success">
+  <span class="alert__icon">✅</span>
+  <span class="alert__text">{{ msg }}</span>
+</div>
+{% endif %}
+
+<!-- Upload Section -->
+{% if can_upload %}
+<details class="collapse collapse--upload">
+  <summary>
+    <span>⬆️ 上传文档</span>
+    <span class="collapse__hint">点击收起</span>
+  </summary>
+  <div class="collapse__body">
+    <form class="library-upload" method="post" action="/library/upload" enctype="multipart/form-data">
+      <label class="library-upload__dropzone" id="dropzone">
+        <input class="library-upload__input" type="file" name="file" accept=".pptx,.docx,.doc,.pdf" required />
+        <div class="library-upload__icon">📁</div>
+        <div class="library-upload__text">点击选择或拖拽文件</div>
+        <div class="library-upload__hint">pptx / docx / doc / pdf · 最大 {{ max_size_mb }}MB</div>
+      </label>
+      <button class="btn btn--primary library-upload__btn" type="submit">⬆️ 上传文件</button>
+    </form>
+  </div>
+</details>
+{% else %}
+<div class="library-limit-reached">
+  <div class="library-limit-reached__icon">🌙</div>
+  <div class="library-limit-reached__title">今日上传已达上限</div>
+  <div class="library-limit-reached__text">
+    为保护服务器资源，每天最多上传 {{ max_daily_uploads }} 个文件<br>
+    明天零点后将重新开放，请稍后再来~
+  </div>
+  <div class="library-limit-reached__progress">
+    <div class="library-limit-reached__bar" style="width: 100%"></div>
+  </div>
+  <div class="library-limit-reached__count">{{ today_uploads }} / {{ max_daily_uploads }}</div>
+</div>
+{% endif %}
+
+<!-- File Showcase -->
+<section class="library-showcase">
+  <div class="library-showcase__header">
+    <h2 class="library-showcase__title">📖 资料展示柜</h2>
+    <span class="library-showcase__count">
+      {% if q %}
+      找到 {{ files|length }} / {{ all_files_count }} 份
+      {% else %}
+      共 {{ all_files_count }} 份资料
+      {% endif %}
+    </span>
+  </div>
+
+  {% if files %}
+  <div class="library-grid">
+    {% for f in files %}
+    <div class="library-item-wrap">
+      <a class="library-item" href="/library/files/{{ f.name|urlencode }}" title="下载 {{ f.name }}">
+        <div class="library-item__icon library-item__icon--{{ f.ext }}">
+          {% if f.ext == 'pdf' %}
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="4" width="32" height="40" rx="4" fill="#E53935" />
+            <path d="M16 20h16M16 26h16M16 32h10" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+            <text x="24" y="16" text-anchor="middle" fill="#fff" font-size="8" font-weight="bold">PDF</text>
+          </svg>
+          {% elif f.ext in ['doc', 'docx'] %}
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="4" width="32" height="40" rx="4" fill="#1976D2" />
+            <path d="M16 20h16M16 26h16M16 32h10" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+            <text x="24" y="16" text-anchor="middle" fill="#fff" font-size="7" font-weight="bold">WORD</text>
+          </svg>
+          {% elif f.ext == 'pptx' %}
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="4" width="32" height="40" rx="4" fill="#D84315" />
+            <rect x="14" y="18" width="20" height="14" rx="2" fill="#fff" fill-opacity="0.9" />
+            <text x="24" y="16" text-anchor="middle" fill="#fff" font-size="7" font-weight="bold">PPT</text>
+          </svg>
+          {% else %}
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="4" width="32" height="40" rx="4" fill="#546E7A" />
+            <path d="M16 20h16M16 26h16M16 32h10" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          {% endif %}
+        </div>
+        <div class="library-item__info">
+          <div class="library-item__name">{{ f.display_name }}</div>
+          <div class="library-item__meta">
+            <span class="library-item__size">{{ f.size_text }}</span>
+            <span class="library-item__date">{{ f.updated_at }}</span>
+          </div>
+        </div>
+        <div class="library-item__download">
+          <span class="library-item__download-icon">⬇️</span>
+        </div>
+      </a>
+      <form class="library-item__delete-form" method="post" action="/library/delete/{{ f.name|urlencode }}"
+        data-confirm="确定要删除「{{ f.display_name }}」吗？此操作不可撤销。">
+        <button class="library-item__delete-btn" type="submit" title="删除文件">
+          🗑️
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {% if all_files_count > 0 and q %}
+  <section class="empty-state">
+    <div class="empty-state__icon">🔍</div>
+    <h3 class="empty-state__title">没有匹配结果</h3>
+    <p class="empty-state__text">试试换个关键词，或清空搜索条件</p>
+  </section>
+  {% else %}
+  <section class="empty-state">
+    <div class="empty-state__icon">📚</div>
+    <h3 class="empty-state__title">书架空空如也</h3>
+    <p class="empty-state__text">上传第一份文档，开启知识共享之旅！</p>
+  </section>
+  {% endif %}
+  {% endif %}
+</section>
+
+<script>
+  // Drag and drop enhancement
+  document.addEventListener('DOMContentLoaded', () => {
+    const dropzone = document.getElementById('dropzone')
+    if (dropzone) {
+      ['dragenter', 'dragover'].forEach(event => {
+        dropzone.addEventListener(event, (e) => {
+          e.preventDefault()
+          dropzone.classList.add('library-upload__dropzone--dragover')
+        })
+      });
+
+      ['dragleave', 'drop'].forEach(event => {
+        dropzone.addEventListener(event, (e) => {
+          e.preventDefault()
+          dropzone.classList.remove('library-upload__dropzone--dragover')
+        })
+      })
+
+      const fileInput = dropzone.querySelector('input[type="file"]')
+      dropzone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files
+        if (files.length > 0) {
+          fileInput.files = files
+          const textEl = dropzone.querySelector('.library-upload__text')
+          if (textEl) {
+            textEl.textContent = files[0].name
+          }
+        }
+      })
+
+      fileInput.addEventListener('change', () => {
+        const textEl = dropzone.querySelector('.library-upload__text')
+        if (textEl && fileInput.files.length > 0) {
+          textEl.textContent = fileInput.files[0].name
+        }
+      })
+    }
+  });
+</script>
+{% endblock %}

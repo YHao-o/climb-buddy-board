@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+{# 详情页分享链接：统一使用 base_url 拼接，保证带域名 #}
+{% set share_base_url = base_url if base_url else 'http://120.79.176.134:8000' %}
+{% set share_url = share_base_url.rstrip('/') ~ '/events/' ~ event.id %}
+{% set participants_text = (event.participants|length > 0) and ('- ' ~ event.participants|join('\\n- ')) or '暂无' %}
+{% set share_text = '🧗 约攀邀请\\n时间：' ~ event.start_text_weekday ~ '\\n地点：' ~ event.location ~ '\\n发起人：' ~ (event.host_nickname or
+event.nickname) ~ '\\n已报名：' ~ (event.participants|length) ~ ' 人\\n报名昵称：\\n' ~ participants_text ~ '\\n链接：' ~ share_url
+%}
+
+<section class="hero">
+  <h1 class="hero__title"><span class="hero__emoji" aria-hidden="true">🧗</span><span class="hero__title-text">约攀邀请</span></h1>
+  <p class="hero__subtitle">发群分享链接，大家点进来直接报名</p>
+</section>
+
+{% if err %}
+<div class="alert alert--error">
+  <span class="alert__icon">⚠️</span>
+  <span class="alert__text">{{ err }}</span>
+</div>
+{% endif %}
+
+{% if msg %}
+<div class="alert alert--success">
+  <span class="alert__icon">✅</span>
+  <span class="alert__text">{{ msg }}</span>
+</div>
+{% endif %}
+
+<section class="events-grid">
+  <article class="event-card {% if is_expired %}event-card--expired{% endif %}">
+    <div class="event-card__header">
+      <div class="event-card__time">{{ event.start_text_weekday }}</div>
+      {% if is_expired %}
+      <span class="event-card__status event-card__status--expired">已过期</span>
+      {% else %}
+      <span class="event-card__status event-card__status--active">进行中</span>
+      {% endif %}
+    </div>
+
+    <div class="event-card__body">
+      <div class="event-card__location">{{ event.location }}</div>
+      <div class="event-card__host">
+        发起人：<strong>{{ event.host_nickname or event.nickname }}</strong>
+      </div>
+    </div>
+
+    <div class="participants">
+      <div class="participants__title">已报名 ({{ event.participants|length }}人)</div>
+
+      {% if event.participants|length > 0 %}
+      <div class="participants__list">
+        {% for p in event.participants %}
+        <span class="participant">{{ p }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="participants__empty">暂无人报名，快来第一个！</p>
+      {% endif %}
+
+      <form method="post" action="/events/{{ event.id }}/join" class="participants__join">
+        <input type="hidden" name="next" value="/events/{{ event.id }}" />
+        <input class="input" name="nickname" placeholder="我也要去（填昵称）" {% if is_expired %}disabled{% else %}required{%
+          endif %} />
+        <button class="btn btn--primary btn--small" type="submit" {% if is_expired %}disabled{% endif %}>🙋 赴约</button>
+        <a class="btn btn--ghost btn--small" href="/">🐦 咕咕咕</a>
+      </form>
+      {% if is_expired %}
+      <p class="participants__empty">活动已过期，无法报名或取消。</p>
+      {% endif %}
+    </div>
+
+    <div class="event-card__actions">
+      <a class="btn btn--ghost btn--small" href="/">⬅️ 返回列表</a>
+      <button class="btn btn--ghost btn--small" type="button" data-invite-text="{{ share_text|e }}">📣 邀请</button>
+    </div>
+  </article>
+</section>
+
+{% endblock %}

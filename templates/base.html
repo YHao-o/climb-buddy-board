@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1419" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>{{ title }}</title>
+  <link rel="icon" href="/static/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    /* Critical inline styles for fast load */
+    body {
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="container">
+      <div class="brand">
+        <div class="brand__title">{{ title }}</div>
+        <div class="brand__subtitle">群友共创 · 一起攀登 🧗‍♀️</div>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav__link {{ 'nav__link--active' if request.url.path == '/' or request.url.path.startswith('/events') else '' }}"
+          href="/">
+          🗓️ 约攀
+        </a>
+        <a class="nav__link {{ 'nav__link--active' if request.url.path.startswith('/guide') else '' }}" href="/guide">
+          📖 指南
+        </a>
+        <a class="nav__link {{ 'nav__link--active' if request.url.path.startswith('/library') else '' }}" href="/library">
+          📚 图书馆
+        </a>
+      </nav>
+
+      <div class="topbar__meta">
+        <span class="pill">开放编辑</span>
+        {% if excel_exists %}
+        <span class="pill">数据已加载</span>
+        {% else %}
+        <span class="pill pill--warn">数据未加载</span>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div>© 深圳爬墙区新手村 · 攀岩社区</div>
+      <div class="footer__links">
+        <a class="link" href="/healthz" target="_blank" rel="noopener noreferrer">系统状态</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Image Lightbox -->
+  <div class="lightbox" id="image-lightbox">
+    <div class="lightbox__backdrop"></div>
+    <div class="lightbox__img-wrap">
+      <button class="lightbox__close" type="button" aria-label="关闭">✕</button>
+      <img class="lightbox__img" src="" alt="" />
+      <div class="lightbox__alt"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="confirm-modal" aria-hidden="true" hidden>
+    <div class="modal__backdrop" data-action="close"></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="modal__header" id="confirm-title">请确认</div>
+      <div class="modal__body" id="confirm-message"></div>
+      <div class="modal__actions">
+        <button class="btn btn--secondary" type="button" data-action="close">取消</button>
+        <button class="btn btn--primary" type="button" data-action="confirm">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Smooth page transitions
+    document.addEventListener('DOMContentLoaded', () => {
+      const modal = document.getElementById('confirm-modal')
+      const modalMessage = document.getElementById('confirm-message')
+      let pendingForm = null
+
+      // 复制文本（移动端更稳：clipboard API -> execCommand -> prompt）
+      const copyText = async (text, fallbackTitle) => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text)
+            return true
+          }
+        } catch (e) {
+          // ignore and fallback
+        }
+
+        try {
+          const textarea = document.createElement('textarea')
+          textarea.value = text
+          textarea.setAttribute('readonly', '')
+          textarea.style.position = 'fixed'
+          textarea.style.top = '-1000px'
+          textarea.style.left = '-1000px'
+          textarea.style.opacity = '0'
+          document.body.appendChild(textarea)
+          textarea.select()
+          textarea.setSelectionRange(0, textarea.value.length)
+          const ok = document.execCommand('copy')
+          document.body.removeChild(textarea)
+          if (ok) return true
+        } catch (e) {
+          // ignore and fallback
+        }
+
+        window.prompt(fallbackTitle || '复制内容', text)
+        return false
+      }
+
+      const closeModal = () => {
+        if (!modal) return
+        modal.classList.remove('modal--open')
+        modal.setAttribute('hidden', '')
+        modal.setAttribute('aria-hidden', 'true')
+        pendingForm = null
+      }
+
+      const openModal = (message, form) => {
+        if (!modal || !modalMessage) return false
+        modalMessage.textContent = message
+        modal.classList.add('modal--open')
+        modal.removeAttribute('hidden')
+        modal.setAttribute('aria-hidden', 'false')
+        pendingForm = form
+        return true
+      }
+
+      if (modal) {
+        modal.addEventListener('click', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const action = target.dataset.action
+          if (action === 'close') {
+            closeModal()
+          }
+          if (action === 'confirm' && pendingForm) {
+            const form = pendingForm
+            closeModal()
+            form.submit()
+          }
+        })
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            // Close lightbox first if open, then modal
+            if (lightbox && lightbox.classList.contains('lightbox--open')) {
+              closeLightbox()
+            } else {
+              closeModal()
+            }
+          }
+        })
+      }
+
+      // 表单提交/复制按钮：使用事件委托，兼容动态刷新生成的新 DOM
+      document.addEventListener('submit', (event) => {
+        const form = event.target
+        if (!(form instanceof HTMLFormElement)) return
+        const confirmText = form.dataset.confirm
+        if (confirmText) {
+          event.preventDefault()
+          event.stopPropagation()
+          if (!openModal(confirmText, form)) {
+            if (window.confirm(confirmText)) {
+              form.submit()
+            }
+          }
+          return
+        }
+        const btn = form.querySelector('button[type="submit"]')
+        if (btn) {
+          btn.disabled = true
+          btn.innerHTML = '<span class="spinner"></span> 处理中...'
+        }
+      }, true)
+
+      document.addEventListener('click', async (event) => {
+        const target = event.target
+        if (!(target instanceof HTMLElement)) return
+        const el = target.closest('[data-invite-text], [data-copy-text]')
+        if (!el) return
+        event.preventDefault()
+        event.stopPropagation()
+
+        const isInvite = !!el.dataset.inviteText
+        const raw = (isInvite ? el.dataset.inviteText : el.dataset.copyText) || ''
+        // 统一按 \n 换行，粘贴到微信/备忘录等都能保留格式
+        const text = raw.replace(/\\n/g, '\n')
+        const original = el.innerHTML
+        const title = isInvite ? '复制邀请信息' : '复制内容'
+        try {
+          await copyText(text, title)
+          el.innerHTML = '✅ 已复制'
+          setTimeout(() => {
+            el.innerHTML = original
+          }, 1500)
+        } catch (err) {
+          window.prompt(title, text)
+        }
+      })
+
+      // ========== Image Lightbox ==========
+      const lightbox = document.getElementById('image-lightbox')
+      const lbImg = lightbox ? lightbox.querySelector('.lightbox__img') : null
+      const lbAlt = lightbox ? lightbox.querySelector('.lightbox__alt') : null
+
+      const openLightbox = (src, alt) => {
+        if (!lightbox || !lbImg) return
+        lbImg.src = src
+        lbImg.alt = alt || ''
+        if (lbAlt) lbAlt.textContent = alt || ''
+        lightbox.classList.add('lightbox--open')
+      }
+
+      const closeLightbox = () => {
+        if (!lightbox) return
+        lightbox.classList.remove('lightbox--open')
+        if (lbImg) lbImg.src = ''
+      }
+
+      if (lightbox) {
+        // Close on backdrop click
+        lightbox.querySelector('.lightbox__backdrop').addEventListener('click', closeLightbox)
+        // Close on X button
+        lightbox.querySelector('.lightbox__close').addEventListener('click', closeLightbox)
+        // Close on ESC (merged with confirm modal ESC handler below)
+      }
+
+      // Intercept clicks on [data-image-src] anywhere on page
+      document.addEventListener('click', (event) => {
+        const el = event.target.closest('[data-image-src]')
+        if (!el) return
+        event.preventDefault()
+        event.stopPropagation()
+        const src = el.dataset.imageSrc
+        const alt = el.dataset.imageAlt || el.querySelector('img')?.alt || ''
+        if (src) openLightbox(src, alt)
+      })
+
+      // Nickname persistence (localStorage)
+      // Any visible input[name="nickname"] will:
+      // - prefill from localStorage on load / when dynamically inserted
+      // - save on input
+      // - show prefilled value with muted color until user edits
+      const NICK_KEY = 'climb_nickname'
+
+      const getNick = () => {
+        try { return (localStorage.getItem(NICK_KEY) || '').trim() } catch (e) { return '' }
+      }
+      const setNick = (v) => {
+        try { localStorage.setItem(NICK_KEY, String(v || '').trim()) } catch (e) {}
+      }
+
+      const isNicknameInput = (el) => {
+        return (el instanceof HTMLInputElement)
+          && el.name === 'nickname'
+          && el.type !== 'hidden'
+          && !el.disabled
+      }
+
+      const applyPrefill = (input) => {
+        if (!isNicknameInput(input)) return
+        const nick = getNick()
+        if (!nick) return
+        if (!input.value) {
+          input.value = nick
+          input.classList.add('input--prefill')
+        }
+      }
+
+      const syncOtherInputs = (nick, exceptEl) => {
+        document.querySelectorAll('input[name="nickname"]').forEach(el => {
+          if (!isNicknameInput(el)) return
+          if (el === exceptEl) return
+          // only auto-fill if it's empty or still in prefill state
+          if (!el.value || el.classList.contains('input--prefill')) {
+            el.value = nick
+            el.classList.add('input--prefill')
+          }
+        })
+      }
+
+      // Prefill existing inputs on load
+      document.querySelectorAll('input[name="nickname"]').forEach(applyPrefill)
+
+      // Prefill for dynamically inserted inputs (events page does incremental DOM patching)
+      const mo = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          m.addedNodes.forEach(node => {
+            if (!(node instanceof Element)) return
+            if (node.matches && node.matches('input[name="nickname"]')) {
+              applyPrefill(node)
+            }
+            node.querySelectorAll && node.querySelectorAll('input[name="nickname"]').forEach(applyPrefill)
+          })
+        }
+      })
+      try {
+        mo.observe(document.body, { childList: true, subtree: true })
+      } catch (e) {}
+
+      // User interaction: focus -> treat prefill as "suggested" (remove muted + select)
+      document.addEventListener('focusin', (event) => {
+        const el = event.target
+        if (!isNicknameInput(el)) return
+        if (el.classList.contains('input--prefill')) {
+          el.classList.remove('input--prefill')
+          // select for quick overwrite
+          try { el.setSelectionRange(0, el.value.length) } catch (e) {}
+        }
+      })
+
+      document.addEventListener('input', (event) => {
+        const el = event.target
+        if (!isNicknameInput(el)) return
+        const v = String(el.value || '').trim()
+        if (!v) return
+        setNick(v)
+        el.classList.remove('input--prefill')
+        syncOtherInputs(v, el)
+      })
+
+      document.addEventListener('focusout', (event) => {
+        const el = event.target
+        if (!isNicknameInput(el)) return
+        const v = String(el.value || '').trim()
+        if (v) {
+          setNick(v)
+          return
+        }
+        // If left empty, restore saved nickname for convenience
+        const nick = getNick()
+        if (nick) {
+          el.value = nick
+          el.classList.add('input--prefill')
+        }
+      })
+    });
+  </script>
+</body>
+
+</html>

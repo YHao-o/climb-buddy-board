@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set is_preview_sheet = (sheet_name in ['其他设备', '攀岩鞋']) %}
+{% set is_beginner_sheet = (sheet_name == '新手注意事项') %}
+{% set show_images = (is_preview_sheet or is_beginner_sheet) %}
+
+<section class="sheetbar">
+  <div class="sheetbar__label">返回</div>
+  <nav class="tabs" aria-label="返回导航">
+    <a class="tab tab--active" href="/guide?sheet={{ sheet_name|urlencode }}&edit=1">← 返回 {{ sheet_name }}</a>
+  </nav>
+</section>
+
+{% if err %}
+<div class="alert alert--error">
+  <span class="alert__icon">⚠️</span>
+  <span class="alert__text">{{ err }}</span>
+</div>
+{% endif %}
+
+{% if msg %}
+<div class="alert alert--success">
+  <span class="alert__icon">✅</span>
+  <span class="alert__text">{{ msg }}</span>
+</div>
+{% endif %}
+
+<section class="form-card">
+  <h2 class="form-card__title" style="margin-bottom: 24px;">编辑行 #{{ row_id }}</h2>
+
+  <form class="editform" method="post" action="/row/{{ row_id }}/edit?sheet={{ sheet_name|urlencode }}">
+    {% for c in sheet.columns %}
+    <label class="field">
+      <span class="field__label">{{ c }}</span>
+      {% set v = (data.get(c) or '') %}
+      {% set is_answer_col = (('回答' in c) or ('回复' in c) or ('答复' in c) or (c.lower() == 'answer')) %}
+      {% if is_beginner_sheet and is_answer_col %}
+      <textarea class="input edit-textarea" name="{{ c }}" rows="6">{{ v }}</textarea>
+      {% else %}
+      <input class="input" name="{{ c }}" value="{{ v }}" />
+      {% endif %}
+    </label>
+    {% endfor %}
+
+    <div class="editform__actions">
+      <button class="btn btn--primary" type="submit">💾 保存</button>
+      <a class="btn btn--secondary" href="/guide?sheet={{ sheet_name|urlencode }}&edit=1">取消</a>
+    </div>
+  </form>
+</section>
+
+{# ===== 图片管理区（其他设备/攀岩鞋 和 新手注意事项 共用同一组件） ===== #}
+{% if show_images %}
+<section class="form-card" style="margin-top: 16px;">
+  <div class="callout__title">
+    {% if is_preview_sheet %}📷 预览图管理{% else %}📷 回答图片{% endif %}
+  </div>
+  {% if is_beginner_sheet %}
+  <p class="muted" style="margin: 4px 0 12px;">上传的图片会展示在列表页的回答区域</p>
+  {% endif %}
+
+  {% if row_images and row_images|length > 0 %}
+  <div class="row-images-gallery">
+    {% for img in row_images %}
+    <div class="row-image-item">
+      <a href="/images/{{ img.filename|urlencode }}" class="row-image-item__link"
+        data-image-src="/images/{{ img.filename|urlencode }}" data-image-alt="{{ img.original_name or img.filename }}">
+        <img class="row-image-item__img" src="/images/{{ img.filename|urlencode }}"
+          alt="{{ img.original_name or img.filename }}" loading="lazy" />
+      </a>
+      <div class="row-image-item__info">
+        <span class="row-image-item__name" title="{{ img.original_name or img.filename }}">{{ img.original_name or
+          img.filename }}</span>
+        <form method="post" action="/row/{{ row_id }}/delete-image/{{ img.id }}?sheet={{ sheet_name|urlencode }}"
+          class="inline" data-confirm="确认删除这张图片？">
+          <button class="btn btn--ghost btn--small row-image-item__delete" type="submit">🗑️ 删除</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin: 12px 0 16px;">
+    {% if is_preview_sheet %}暂无图片，上传后会在卡片中展示{% else %}暂无图片，上传后会在回答区域展示{% endif %}
+  </p>
+  {% endif %}
+
+  <form class="row-image-upload" action="/row/{{ row_id }}/upload-image?sheet={{ sheet_name|urlencode }}" method="post"
+    enctype="multipart/form-data">
+    <label class="row-image-upload__dropzone" data-dropzone>
+      <input class="row-image-upload__input" type="file" name="file" accept="image/*" required />
+      <div class="row-image-upload__text">📁 点击选择或拖拽图片</div>
+      <div class="row-image-upload__hint">png / jpg / gif / webp · 最大 10MB</div>
+    </label>
+    <button class="btn btn--primary" type="submit">⬆️ 上传图片</button>
+  </form>
+</section>
+{% endif %}
+
+{% if is_preview_sheet and sheet and sheet.image_column %}
+<section class="callout" style="margin-top: 16px;">
+  <div class="callout__title">💡 图片列提示</div>
+  <div class="callout__body">
+    <p>此表有图片列「<strong>{{ sheet.image_column }}</strong>」，除了上方的图片管理，您也可以将文件名填到该字段来展示图片。</p>
+  </div>
+</section>
+{% endif %}
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-dropzone]').forEach((dropzone) => {
+      const fileInput = dropzone.querySelector('input[type="file"]')
+      if (!fileInput) return
+      const setText = (name) => {
+        const textEl = dropzone.querySelector('.row-image-upload__text')
+        if (textEl) textEl.textContent = name || '📁 点击选择或拖拽图片'
+      }
+        ;['dragenter', 'dragover'].forEach(evt => {
+          dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('row-image-upload__dropzone--dragover') })
+        })
+        ;['dragleave', 'drop'].forEach(evt => {
+          dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('row-image-upload__dropzone--dragover') })
+        })
+      dropzone.addEventListener('drop', e => {
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          fileInput.files = e.dataTransfer.files
+          setText(e.dataTransfer.files[0].name)
+        }
+      })
+      fileInput.addEventListener('change', () => {
+        setText(fileInput.files && fileInput.files[0] ? fileInput.files[0].name : '')
+      })
+    })
+  })
+</script>
+{% endblock %}
