@@ -48,6 +48,6 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### 贡献者
 
-| 贡献者 | 贡献内容 |
-| --- | --- |
-| [@haixinsong](https://github.com/haixinsong) | 域名配置 |
+致敬每一位开发者！
+
+[![Contributors](https://contrib.rocks/image?repo=YHao-o/climb-buddy-board)](https://github.com/YHao-o/climb-buddy-board/graphs/contributors)
