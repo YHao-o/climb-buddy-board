@@ -1,2 +1,6 @@
 __pycache__
 data.db*
+app.log
+*.xlsx
+library_files/*
+图片/*
