@@ -4,3 +4,5 @@ app.log
 *.xlsx
 library_files/*
 图片/*
+logs
+.venv
