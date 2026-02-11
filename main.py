@@ -622,10 +622,16 @@ def load_workbook() -> WorkbookData:
     for s in meta:
         db_rows = guide_db.list_rows(conn, sheet=s["name"])
         rows = [{"__id__": r.id, **r.data} for r in db_rows]
+        columns = list(s["columns"])
+        # UX: extend some sheets with extra optional fields without requiring a DB schema migration
+        if s["name"] == "其他设备":
+            for extra in ["购买链接", "推荐人"]:
+                if extra not in columns:
+                    columns.append(extra)
         sheets.append(
             SheetData(
                 name=s["name"],
-                columns=list(s["columns"]),
+                columns=columns,
                 rows=rows,
                 image_column=s["image_column"],
             )
@@ -662,6 +668,45 @@ def _filter_rows(
     return out
 
 
+_CATEGORY_COL_RE = re.compile(r"(?i)(类别|分类|类型|品类|category|type)")
+_NAME_COL_RE = re.compile(r"(?i)(名称|名字|设备|物品|型号|name|title)")
+
+
+def _sort_key_text(v: Any) -> str:
+    """Normalize a value for sorting (None last handled by caller)."""
+    vv = _clean_cell(v)
+    if vv is None:
+        return ""
+    return str(vv).strip().lower()
+
+
+def _sort_rows_for_sheet(
+    rows: list[dict[str, Any]], sheet_name: str, columns: list[str] | None
+) -> list[dict[str, Any]]:
+    """Sheet-specific ordering tweaks for better UX."""
+    if sheet_name != "其他设备":
+        return rows
+    cols = list(columns or [])
+    cat_col = next((c for c in cols if _CATEGORY_COL_RE.search(c)), None)
+    if not cat_col:
+        return rows
+    name_col = next((c for c in cols if _NAME_COL_RE.search(c)), None)
+
+    def key(r: dict[str, Any]):
+        cat = _clean_cell(r.get(cat_col))
+        name = _clean_cell(r.get(name_col)) if name_col else None
+        # None categories go last; within category sort by name-ish column (if any)
+        return (
+            cat is None,
+            _sort_key_text(cat),
+            name is None,
+            _sort_key_text(name),
+            _sort_key_text(r.get("__id__")),
+        )
+
+    return sorted(rows, key=key)
+
+
 @app.get("/guide", response_class=HTMLResponse)
 # 指南页
 def guide(
@@ -681,6 +726,7 @@ def guide(
 
     rows: list[dict[str, Any]] = sd.rows if sd else []
     rows = _filter_rows(rows, q=q, column=column, value=value)
+    rows = _sort_rows_for_sheet(rows, active_sheet, (sd.columns if sd else None))
 
     conn = get_conn()
 
@@ -723,7 +769,7 @@ def guide(
             "view": view,
             "uploaded": uploaded or "",
             "images_mounted": True,
-            "excel_exists": EXCEL_PATH.exists(),
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
             "enable_edit": True,
             "edit": bool(edit),
             "err": err or "",
@@ -768,7 +814,7 @@ async def library_page(
         {
             "request": request,
             "title": "群图书馆",
-            "excel_exists": EXCEL_PATH.exists(),
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
             "images_mounted": True,
             "err": err or "",
             "msg": msg or "",
@@ -1105,7 +1151,7 @@ async def events_page(request: Request, err: str | None = None, msg: str | None 
         {
             "request": request,
             "title": "深圳爬墙区新手村",
-            "excel_exists": EXCEL_PATH.exists(),
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
             "images_mounted": True,
             "err": err or "",
             "msg": msg or "",
@@ -1138,7 +1184,7 @@ async def event_detail_page(
         {
             "request": request,
             "title": "约攀邀请",
-            "excel_exists": EXCEL_PATH.exists(),
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
             "images_mounted": True,
             "err": err or "",
             "msg": msg or "",
@@ -1371,7 +1417,7 @@ async def edit_row_page(
             "row_id": row_id,
             "data": row.data,
             "row_images": row_images,
-            "excel_exists": EXCEL_PATH.exists(),
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
             "images_mounted": True,
             "enable_edit": True,
             "err": err or "",
