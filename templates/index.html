@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% if not excel_exists %}
+{% if (not excel_exists) and (workbook.sheets|length == 0) %}
 <section class="callout callout--warn">
   <div class="callout__title">⚠️ 未找到数据文件</div>
   <div class="callout__body">
@@ -272,7 +272,11 @@
           {% set v = r.get(c) %}
           {% set is_answer_col = (('回答' in c) or ('回复' in c) or ('答复' in c) or (c.lower() == 'answer')) %}
           <td class="table__td">
+            {% if c == '购买链接' and v is not none and v != '' %}
+            <a class="link" href="#" data-copy-text="{{ v|e }}" title="点击复制链接">{{ v }}</a>
+            {% else %}
             {{ v|linkify }}
+            {% endif %}
             {% if is_beginner_sheet and is_answer_col %}
             {% set imgs = r.get('__row_images__') or [] %}
             {% if imgs|length > 0 %}
@@ -338,7 +342,11 @@
         <dt class="kv__k">{{ c }}</dt>
         {% set is_answer_col = (('回答' in c) or ('回复' in c) or ('答复' in c) or (c.lower() == 'answer')) %}
         <dd class="kv__v">
+          {% if c == '购买链接' and v is not none and v != '' %}
+          <a class="link" href="#" data-copy-text="{{ v|e }}" title="点击复制链接">{{ v }}</a>
+          {% else %}
           {{ v|linkify }}
+          {% endif %}
           {% if is_beginner_sheet and is_answer_col %}
           {% set imgs = r.get('__row_images__') or [] %}
           {% if imgs|length > 0 %}

@@ -110,11 +110,27 @@
       <div class="form-grid">
         <label class="field">
           <span class="field__label">时间</span>
-          <input class="input" type="datetime-local" name="when" required />
+          <input id="climbing-time" class="input" type="datetime-local" name="when" required/>
         </label>
         <label class="field">
           <span class="field__label">地点</span>
-          <input class="input" name="location" placeholder="香蕉 / 岩时 / 户外点…" required />
+          <input class="input" name="location" placeholder="香蕉 / 岩时 / 户外点…" required list="climbing-gym" />
+          <datalist id="climbing-gym">
+
+            <!-- 香蕉攀岩 -->
+            <option value="香蕉攀岩(金蝶店)"></option>
+            <option value="香蕉攀岩(后海汇店)"></option>
+            <option value="香蕉攀岩(宝安中心店)"></option>
+            <option value="香蕉攀岩(领展中心城店)"></option>
+            <option value="香蕉攀岩(iN城市广场店)"></option>
+            <option value="香蕉攀岩(BANANA+/嘉乐道店)"></option>
+
+            <option value="Upper(深康店)"></option>
+            <option value="Upper(南光店)"></option>
+            <option value="Upper(龙华店)"></option>
+
+            <option value="户外"></option>
+          </datalist>
         </label>
         <label class="field">
           <span class="field__label">你的昵称</span>
@@ -634,6 +650,17 @@
 </script>
 
 <script>
+    // 发起约攀：设置默认时间
+    document.addEventListener('DOMContentLoaded', () => {
+      const dateControl = document.querySelector('#climbing-time');
+      const defaultDate = new Date();
+      // 判断时区, 调整为东8区时间
+      defaultDate.setMinutes(defaultDate.getMinutes() - defaultDate.getTimezoneOffset());
+      // 按1刻钟取整
+      defaultDate.setMinutes(Math.ceil(defaultDate.getMinutes() / 15) * 15);
+      dateControl.value = defaultDate.toISOString().slice(0,16);
+    })
+
   // 村历：固定 2s 刷新
   document.addEventListener('DOMContentLoaded', () => {
     const REFRESH_MS = 2000

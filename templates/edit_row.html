@@ -109,6 +109,113 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // --- Draft preserve (avoid losing unsaved text when uploading images / redirecting) ---
+    const editForm = document.querySelector('form.editform')
+    const uploadForm = document.querySelector('form.row-image-upload')
+    const sheetName = {{ sheet_name|tojson }}
+    const rowId = {{ row_id|tojson }}
+    const draftKey = `edit_row_draft:${sheetName}:${rowId}`
+
+    const getDraft = () => {
+      try {
+        const raw = sessionStorage.getItem(draftKey)
+        if (!raw) return null
+        return JSON.parse(raw)
+      } catch (e) {
+        return null
+      }
+    }
+    const setDraft = (payload) => {
+      try {
+        sessionStorage.setItem(draftKey, JSON.stringify(payload))
+      } catch (e) { }
+    }
+    const clearDraft = () => {
+      try { sessionStorage.removeItem(draftKey) } catch (e) { }
+    }
+    const collectValues = () => {
+      const values = {}
+      if (!editForm) return values
+      editForm.querySelectorAll('input[name], textarea[name], select[name]').forEach(el => {
+        const name = el.getAttribute('name')
+        if (!name) return
+        // Ignore file inputs just in case
+        if (el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'file') return
+        values[name] = el.value ?? ''
+      })
+      return values
+    }
+    const saveDraft = () => {
+      if (!editForm) return
+      setDraft({ ts: Date.now(), values: collectValues() })
+    }
+    const _findField = (name) => {
+      if (!editForm) return null
+      try {
+        // Most robust: works even when name contains special characters
+        const byElements = editForm.elements && editForm.elements.namedItem ? editForm.elements.namedItem(name) : null
+        if (byElements) {
+          // namedItem may return RadioNodeList when multiple elements share same name
+          if (byElements instanceof RadioNodeList) return byElements[0] || null
+          return byElements
+        }
+      } catch (e) { }
+      try {
+        const esc = (window.CSS && CSS.escape) ? CSS.escape : (s) => String(s).replace(/["\\]/g, '\\$&')
+        return editForm.querySelector(`[name="${esc(name)}"]`)
+      } catch (e) {
+        return null
+      }
+    }
+    const restoreDraft = () => {
+      if (!editForm) return
+      const draft = getDraft()
+      if (!draft || !draft.values) return
+      Object.entries(draft.values).forEach(([name, val]) => {
+        const el = _findField(name)
+        if (!el) return
+        // Don't overwrite if value is already identical
+        if ((el.value ?? '') === (val ?? '')) return
+        el.value = val ?? ''
+      })
+    }
+
+    // Restore on load (so uploads / refresh won't wipe unsaved edits)
+    restoreDraft()
+
+    // Prefill recommender from saved nickname (if any)
+    try {
+      const NICK_KEY = 'climb_nickname'
+      const savedNick = (localStorage.getItem(NICK_KEY) || '').trim()
+      if (savedNick) {
+        const recommenderEl = _findField('推荐人')
+        if (recommenderEl && !recommenderEl.value) {
+          recommenderEl.value = savedNick
+          // Persist as draft so image upload won't revert it
+          saveDraft()
+        }
+      }
+    } catch (e) { }
+
+    // Keep draft up-to-date while typing (debounced)
+    let draftTimer = null
+    if (editForm) {
+      editForm.addEventListener('input', () => {
+        if (draftTimer) window.clearTimeout(draftTimer)
+        draftTimer = window.setTimeout(saveDraft, 250)
+      })
+      // When user explicitly saves, discard draft (server becomes source of truth)
+      editForm.addEventListener('submit', () => {
+        clearDraft()
+      })
+    }
+    // Before uploading images, persist current unsaved edits
+    if (uploadForm) {
+      uploadForm.addEventListener('submit', () => {
+        saveDraft()
+      })
+    }
+
     document.querySelectorAll('[data-dropzone]').forEach((dropzone) => {
       const fileInput = dropzone.querySelector('input[type="file"]')
       if (!fileInput) return
