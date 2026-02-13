@@ -34,7 +34,8 @@ TEMPLATES_DIR = ROOT / "templates"
 DB_PATH = ROOT / "data.db"
 DOCS_DIR = ROOT / "library_files"
 # 站点基础地址（用于生成邀请/复制链接）
-BASE_URL ="http://127.0.0.1:8000"
+#BASE_URL ="https://panyanfor.fun"
+BASE_URL = "http:120.79.176.134:8000"
 
 # 审计日志（按 IP 记录关键操作）
 LOG_DIR = ROOT / "logs"
