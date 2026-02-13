@@ -44,7 +44,11 @@
           📖 指南
         </a>
         <a class="nav__link {{ 'nav__link--active' if request.url.path.startswith('/library') else '' }}" href="/library">
-          📚 图书馆
+          📚 资料
+        </a>
+        <a class="nav__link {{ 'nav__link--active' if request.url.path.startswith('/suggestions') else '' }}"
+          href="/suggestions">
+          💡 建议
         </a>
       </nav>
 

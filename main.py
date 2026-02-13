@@ -33,6 +33,7 @@ ASSETS_DIR = ROOT / "static"
 TEMPLATES_DIR = ROOT / "templates"
 DB_PATH = ROOT / "data.db"
 DOCS_DIR = ROOT / "library_files"
+CONTRIB_DIR = ROOT / "contribute"
 # 站点基础地址（用于生成邀请/复制链接）
 #BASE_URL ="https://panyanfor.fun"
 BASE_URL = "http:120.79.176.134:8000"
@@ -75,6 +76,9 @@ if ASSETS_DIR.exists():
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
+# Contributors avatars (from repo folder)
+CONTRIB_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/contribute", StaticFiles(directory=str(CONTRIB_DIR)), name="contribute")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -374,6 +378,33 @@ def _validate_file_content(content: bytes, suffix: str) -> bool:
         if content[:len(sig)] == sig:
             return True
     return False
+
+
+def _normalize_bool(v: Any) -> bool:
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    return s in {"1", "true", "yes", "on"}
+
+
+def _list_contributors_from_folder() -> list[dict[str, Any]]:
+    """
+    List contributors from `contribute/` folder:
+    - each *.ico file => one contributor
+    - filename stem => nickname
+    """
+    out: list[dict[str, Any]] = []
+    try:
+        files = [p for p in CONTRIB_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".ico"]
+    except Exception:
+        files = []
+    files.sort(key=lambda p: p.stem.lower())
+    for p in files:
+        nickname = (p.stem or "").strip()
+        if not nickname:
+            continue
+        out.append({"nickname": nickname, "avatar_filename": p.name})
+    return out
 
 
 def _count_today_uploads() -> int:
@@ -969,6 +1000,121 @@ async def library_delete(request: Request, filename: str):
     except Exception:
         _audit("library_delete_failed_exception", request=request, filename=safe_name, suffix=suffix)
         return RedirectResponse(url="/library?err=删除失败，请稍后重试", status_code=303)
+
+
+@app.get("/suggestions", response_class=HTMLResponse)
+# 建设建议（可匿名/署名）
+async def suggestions_page(request: Request, err: str | None = None, msg: str | None = None):
+    contributors = _list_contributors_from_folder()
+    conn = get_conn()
+    try:
+        suggestions = guide_db.list_suggestions(conn, limit=200)
+    finally:
+        conn.close()
+    return templates.TemplateResponse(
+        "suggestions.html",
+        {
+            "request": request,
+            "title": "建设建议",
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
+            "images_mounted": True,
+            "err": err or "",
+            "msg": msg or "",
+            "suggestions": suggestions,
+            "contributors": contributors,
+        },
+    )
+
+
+@app.post("/suggestions/new")
+async def suggestions_new(request: Request):
+    form = await request.form()
+    content = str(form.get("content") or "").strip()
+    nickname = str(form.get("nickname") or "").strip()
+    is_anonymous = _normalize_bool(form.get("anonymous"))
+
+    if not content:
+        _audit("suggestion_create_failed_no_content", request=request, is_anonymous=is_anonymous)
+        return RedirectResponse(url="/suggestions?err=请填写建议内容", status_code=303)
+    if len(content) > 2000:
+        _audit(
+            "suggestion_create_failed_too_long",
+            request=request,
+            is_anonymous=is_anonymous,
+            content_len=len(content),
+        )
+        return RedirectResponse(url="/suggestions?err=建议内容太长（最多2000字）", status_code=303)
+
+    avatar_filename = ""
+    # If anonymous, ignore nickname/avatar
+    if is_anonymous:
+        nickname = ""
+    else:
+        if not nickname:
+            _audit("suggestion_create_failed_no_nickname", request=request)
+            return RedirectResponse(url="/suggestions?err=署名提交请填写群昵称，或勾选匿名", status_code=303)
+        if len(nickname) > 40:
+            return RedirectResponse(url="/suggestions?err=昵称太长（最多40字）", status_code=303)
+
+        # 记录 IP-昵称关联（复用既有逻辑）
+        _record_ip_nickname(_client_ip(request), nickname)
+
+    conn = get_conn()
+    try:
+        suggestion_id = guide_db.insert_suggestion(
+            conn,
+            content=content,
+            is_anonymous=is_anonymous,
+            nickname=nickname,
+            avatar_filename=avatar_filename,
+        )
+    finally:
+        conn.close()
+
+    _audit(
+        "suggestion_create",
+        request=request,
+        suggestion_id=suggestion_id,
+        is_anonymous=is_anonymous,
+        nickname=nickname if nickname else None,
+        content_len=len(content),
+        has_avatar=bool(avatar_filename),
+    )
+    return RedirectResponse(url="/suggestions?msg=提交成功，感谢共建！", status_code=303)
+
+
+@app.post("/suggestions/{suggestion_id}/delete")
+async def suggestions_delete(request: Request, suggestion_id: int):
+    conn = get_conn()
+    try:
+        ok = guide_db.delete_suggestion(conn, suggestion_id=suggestion_id)
+    finally:
+        conn.close()
+    _audit("suggestion_delete", request=request, suggestion_id=suggestion_id, ok=ok)
+    if not ok:
+        return RedirectResponse(url="/suggestions?err=建议不存在或已被删除", status_code=303)
+    return RedirectResponse(url="/suggestions?msg=已删除", status_code=303)
+
+
+@app.post("/suggestions/{suggestion_id}/done")
+async def suggestions_set_done(request: Request, suggestion_id: int):
+    form = await request.form()
+    is_done = _normalize_bool(form.get("is_done"))
+    conn = get_conn()
+    try:
+        ok = guide_db.set_suggestion_done(conn, suggestion_id=suggestion_id, is_done=is_done)
+    finally:
+        conn.close()
+    _audit(
+        "suggestion_set_done",
+        request=request,
+        suggestion_id=suggestion_id,
+        ok=ok,
+        is_done=is_done,
+    )
+    if not ok:
+        return RedirectResponse(url="/suggestions?err=建议不存在或已被删除", status_code=303)
+    return RedirectResponse(url="/suggestions?msg=已更新", status_code=303)
 
 
 @app.post("/guide/settings/update")

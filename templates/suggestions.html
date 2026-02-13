@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h1 class="hero__title"><span class="hero__emoji" aria-hidden="true">💡</span><span
+      class="hero__title-text">建设建议</span></h1>
+  <p class="hero__subtitle">把你想要的功能/改进点告诉我们，一起把网站做得更好</p>
+</section>
+
+<div class="info-badges">
+  <span class="info-badge">
+    <span class="info-badge__icon">🕶️</span>
+    支持匿名/署名
+  </span>
+  <span class="info-badge">
+    <span class="info-badge__icon">🫶</span>
+    下方展示贡献者名单
+  </span>
+</div>
+
+{% if err %}
+<div class="alert alert--error">
+  <span class="alert__icon">⚠️</span>
+  <span class="alert__text">{{ err }}</span>
+</div>
+{% endif %}
+
+{% if msg %}
+<div class="alert alert--success">
+  <span class="alert__icon">✅</span>
+  <span class="alert__text">{{ msg }}</span>
+</div>
+{% endif %}
+
+<details class="collapse collapse--suggestions" open>
+  <summary>
+    <span>📝 提交建设建议</span>
+    <span class="collapse__hint">点击收起</span>
+  </summary>
+  <div class="collapse__body">
+    <form method="post" action="/suggestions/new">
+      <div class="suggest-form">
+        <label class="field">
+          <span class="field__label">建议内容</span>
+          <textarea class="input" name="content" rows="5" maxlength="2000" required
+            placeholder="比如：增加暗黑模式 / 增加投票功能 / 页面加载慢可以优化…"></textarea>
+        </label>
+
+        <div class="suggest-form__row">
+          <label class="check">
+            <input class="check__input" type="checkbox" name="anonymous" value="1" id="suggest-anon" />
+            <span class="check__label">匿名提交</span>
+          </label>
+          <span class="muted">匿名时不会展示昵称和头像</span>
+        </div>
+
+        <div class="suggest-form__grid">
+          <label class="field">
+            <span class="field__label">群昵称（署名必填）</span>
+            <input class="input" name="nickname" id="suggest-nickname" placeholder="群昵称" />
+          </label>
+        </div>
+
+        <div class="suggest-form__actions">
+          <button class="btn btn--primary" type="submit">📮 提交</button>
+          <a class="btn btn--secondary" href="/suggestions">清空</a>
+        </div>
+      </div>
+    </form>
+  </div>
+</details>
+
+<section class="suggestions">
+  <div class="contributors__header">
+    <h2 class="contributors__title">📌 建设建议</h2>
+    <span class="contributors__count">{{ suggestions|length if suggestions else 0 }} 条</span>
+  </div>
+
+  {% if suggestions and suggestions|length > 0 %}
+  <div class="suggestions__list">
+    {% for s in suggestions %}
+    <article class="suggestion {{ 'suggestion--done' if s.is_done else '' }}">
+      <div class="suggestion__header">
+        <div class="suggestion__meta">
+          {% if s.is_anonymous %}
+          <span class="badge">匿名</span>
+          {% else %}
+          <span class="badge badge--success">{{ s.nickname }}</span>
+          {% endif %}
+          <span class="muted">{{ s.created_at }}</span>
+          {% if s.is_done %}
+          <span class="badge badge--success">已完成</span>
+          {% endif %}
+        </div>
+        <div class="suggestion__actions">
+          <form method="post" action="/suggestions/{{ s.id }}/done" class="inline">
+            <input type="hidden" name="is_done" value="{{ '0' if s.is_done else '1' }}" />
+            <button class="btn btn--secondary btn--small" type="submit">
+              {{ '取消完成' if s.is_done else '标记完成' }}
+            </button>
+          </form>
+          <form method="post" action="/suggestions/{{ s.id }}/delete" class="inline" data-confirm="确认删除这条建议？">
+            <button class="btn btn--secondary btn--small" type="submit">删除</button>
+          </form>
+        </div>
+      </div>
+      <div class="suggestion__content">{{ s.content|e }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <section class="empty-state">
+    <div class="empty-state__icon">🧩</div>
+    <h3 class="empty-state__title">还没有建议</h3>
+    <p class="empty-state__text">提交第一条建议，帮助我们一起完善网站</p>
+  </section>
+  {% endif %}
+</section>
+
+<section class="contributors">
+  <div class="contributors__header">
+    <h2 class="contributors__title">🌟 贡献者名单</h2>
+    <span class="contributors__count">{{ contributors|length }} 人</span>
+  </div>
+
+  {% if contributors and contributors|length > 0 %}
+  <div class="contributors__grid" aria-label="贡献者列表">
+    {% for c in contributors %}
+    <div class="contributor">
+      <img class="avatar" src="/contribute/{{ c.avatar_filename|urlencode }}" alt="{{ c.nickname|e }}" loading="lazy" />
+      <div class="contributor__meta">
+        <div class="contributor__name">{{ c.nickname }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <section class="empty-state">
+    <div class="empty-state__icon">🪨</div>
+    <h3 class="empty-state__title">暂时还没有贡献者</h3>
+    <p class="empty-state__text">来提交第一条建设建议，点亮名单吧！</p>
+  </section>
+  {% endif %}
+</section>
+
+<script>
+  // 匿名提交：禁用昵称/头像输入，避免误操作
+  document.addEventListener('DOMContentLoaded', () => {
+    const anon = document.getElementById('suggest-anon')
+    const nick = document.getElementById('suggest-nickname')
+    if (!anon || !nick) return
+    const apply = () => {
+      const on = !!anon.checked
+      nick.disabled = on
+      if (on) {
+        nick.value = ''
+      }
+    }
+    anon.addEventListener('change', apply)
+    apply()
+  })
+</script>
+{% endblock %}
+
