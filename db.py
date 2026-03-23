@@ -148,6 +148,48 @@ def init_db(conn: sqlite3.Connection) -> None:
             )
             """
         )
+
+        # 用户建议（可匿名/可署名）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS suggestions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              content TEXT NOT NULL,
+              is_anonymous INTEGER NOT NULL DEFAULT 0,
+              nickname TEXT NOT NULL DEFAULT '',
+              avatar_filename TEXT NOT NULL DEFAULT '',
+              is_done INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_suggestions_created_at ON suggestions(created_at)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_suggestions_nickname ON suggestions(nickname)"
+        )
+
+        # 美食推荐（按岩馆分区）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS food_recommendations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gym TEXT NOT NULL,
+              recommender TEXT NOT NULL DEFAULT '',
+              store_name TEXT NOT NULL,
+              reason TEXT NOT NULL DEFAULT '',
+              map_url TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_food_recos_created_at ON food_recommendations(created_at)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_food_recos_gym ON food_recommendations(gym)"
+        )
         
         # Migration for older dbs
         cur.execute("PRAGMA table_info(events)")
@@ -164,6 +206,201 @@ def init_db(conn: sqlite3.Connection) -> None:
         row_cols = {r[1] for r in cur.fetchall()}
         if "version" not in row_cols:
             cur.execute("ALTER TABLE rows ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+
+        # Migration: suggestions.is_done
+        cur.execute("PRAGMA table_info(suggestions)")
+        sug_cols = {r[1] for r in cur.fetchall()}
+        if "is_done" not in sug_cols:
+            cur.execute("ALTER TABLE suggestions ADD COLUMN is_done INTEGER NOT NULL DEFAULT 0")
+
+
+def insert_suggestion(
+    conn: sqlite3.Connection,
+    *,
+    content: str,
+    is_anonymous: bool,
+    nickname: str,
+    avatar_filename: str,
+) -> int:
+    with transaction(conn) as cur:
+        cur.execute(
+            """
+            INSERT INTO suggestions(content, is_anonymous, nickname, avatar_filename, is_done, created_at)
+            VALUES(?, ?, ?, ?, 0, datetime('now'))
+            """,
+            (
+                content,
+                1 if is_anonymous else 0,
+                nickname or "",
+                avatar_filename or "",
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def list_suggestions(conn: sqlite3.Connection, *, limit: int = 200) -> list[dict[str, Any]]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, content, is_anonymous, nickname, is_done, created_at
+        FROM suggestions
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        out.append(
+            {
+                "id": int(r["id"]),
+                "content": str(r["content"] or ""),
+                "is_anonymous": bool(int(r["is_anonymous"] or 0)),
+                "nickname": str(r["nickname"] or ""),
+                "is_done": bool(int(r["is_done"] or 0)),
+                "created_at": str(r["created_at"] or ""),
+            }
+        )
+    return out
+
+
+def delete_suggestion(conn: sqlite3.Connection, *, suggestion_id: int) -> bool:
+    with transaction(conn) as cur:
+        cur.execute("DELETE FROM suggestions WHERE id=?", (int(suggestion_id),))
+        return cur.rowcount > 0
+
+
+def set_suggestion_done(conn: sqlite3.Connection, *, suggestion_id: int, is_done: bool) -> bool:
+    with transaction(conn) as cur:
+        cur.execute(
+            "UPDATE suggestions SET is_done=? WHERE id=?",
+            (1 if is_done else 0, int(suggestion_id)),
+        )
+        return cur.rowcount > 0
+
+
+def list_suggestion_contributors(
+    conn: sqlite3.Connection, *, limit: int = 80
+) -> list[dict[str, Any]]:
+    """
+    Return unique contributors (non-anonymous) with optional avatar.
+    Ordered by contributions desc then recent activity.
+    """
+    # Count contributions + last activity per nickname
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+          nickname,
+          COUNT(1) AS suggestions_count,
+          MAX(id) AS last_id
+        FROM suggestions
+        WHERE is_anonymous=0 AND nickname <> ''
+        GROUP BY nickname
+        ORDER BY suggestions_count DESC, last_id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return []
+
+    nicknames = [str(r["nickname"]) for r in rows]
+
+    # Latest avatar per nickname (only when avatar_filename not empty)
+    placeholders = ",".join("?" for _ in nicknames)
+    cur.execute(
+        f"""
+        SELECT s.nickname, s.avatar_filename
+        FROM suggestions s
+        JOIN (
+          SELECT nickname, MAX(id) AS max_id
+          FROM suggestions
+          WHERE is_anonymous=0 AND nickname <> '' AND avatar_filename <> ''
+          GROUP BY nickname
+        ) t
+        ON s.nickname=t.nickname AND s.id=t.max_id
+        WHERE s.nickname IN ({placeholders})
+        """,
+        nicknames,
+    )
+    avatar_map: dict[str, str] = {}
+    for r in cur.fetchall():
+        avatar_map[str(r["nickname"])] = str(r["avatar_filename"] or "")
+
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        nickname = str(r["nickname"])
+        out.append(
+            {
+                "nickname": nickname,
+                "suggestions_count": int(r["suggestions_count"] or 0),
+                "avatar_filename": avatar_map.get(nickname, ""),
+            }
+        )
+    return out
+
+
+# ============ Food Recommendations ============
+
+def insert_food_recommendation(
+    conn: sqlite3.Connection,
+    *,
+    gym: str,
+    recommender: str,
+    store_name: str,
+    reason: str,
+    map_url: str,
+) -> int:
+    with transaction(conn) as cur:
+        cur.execute(
+            """
+            INSERT INTO food_recommendations(gym, recommender, store_name, reason, map_url, created_at)
+            VALUES(?, ?, ?, ?, ?, datetime('now', '+8 hours'))
+            """,
+            (
+                gym,
+                recommender or "",
+                store_name,
+                reason or "",
+                map_url or "",
+            ),
+        )
+        return int(cur.lastrowid)
+
+
+def list_food_recommendations(conn: sqlite3.Connection, *, limit: int = 400) -> list[dict[str, Any]]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, gym, recommender, store_name, reason, map_url, created_at
+        FROM food_recommendations
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    out: list[dict[str, Any]] = []
+    for r in cur.fetchall():
+        out.append(
+            {
+                "id": int(r["id"]),
+                "gym": str(r["gym"] or ""),
+                "recommender": str(r["recommender"] or ""),
+                "store_name": str(r["store_name"] or ""),
+                "reason": str(r["reason"] or ""),
+                "map_url": str(r["map_url"] or ""),
+                "created_at": str(r["created_at"] or ""),
+            }
+        )
+    return out
+
+
+def delete_food_recommendation(conn: sqlite3.Connection, *, recommendation_id: int) -> bool:
+    with transaction(conn) as cur:
+        cur.execute("DELETE FROM food_recommendations WHERE id=?", (int(recommendation_id),))
+        return cur.rowcount > 0
 
 
 # 判断是否有数据

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="sheetbar">
+  <div class="sheetbar__label">工作表</div>
+  <nav class="tabs" aria-label="工作表切换">
+    {% for s in workbook.sheets %}
+    <a class="tab" href="/guide?sheet={{ s.name|urlencode }}">{{ s.name }}</a>
+    {% endfor %}
+    <a class="tab tab--active" href="/guide/food">🍜 美食推荐</a>
+  </nav>
+</section>
+
+{% if err %}
+<section class="callout callout--warn">
+  <div class="callout__title">⚠️ 操作失败</div>
+  <div class="callout__body">{{ err }}</div>
+</section>
+{% endif %}
+
+{% if msg %}
+<section class="callout">
+  <div class="callout__title">✅ 操作成功</div>
+  <div class="callout__body">{{ msg }}</div>
+</section>
+{% endif %}
+
+<details class="collapse collapse--upload" id="food-recos" {% if err or food_total_count == 0 %}open{% endif %}>
+  <summary>
+    <span>➕ 添加美食推荐</span>
+    <span class="collapse__hint">点击展开</span>
+  </summary>
+  <div class="collapse__body">
+    <form class="editform" method="post" action="/guide/food/new">
+      <input type="hidden" name="return_q" value="{{ food_query }}" />
+      <div class="food-form-grid">
+        <label class="field">
+          <span class="field__label">岩馆分区</span>
+          <input class="input" name="gym" placeholder="选择或输入岩馆名称" list="food-gym-list" required />
+          <datalist id="food-gym-list">
+            {% for g in climbing_gyms %}
+            <option value="{{ g }}"></option>
+            {% endfor %}
+          </datalist>
+        </label>
+        <label class="field">
+          <span class="field__label">推荐店名</span>
+          <input class="input" name="store_name" placeholder="例如：XX烧烤 / XX牛肉火锅" required />
+        </label>
+        <label class="field">
+          <span class="field__label">推荐人</span>
+          <input class="input" name="recommender" placeholder="群昵称（可不填，默认匿名）" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">推荐理由</span>
+        <textarea class="input" name="reason" rows="3" placeholder="好吃点/性价比/适合爬完补碳水/宵夜…"></textarea>
+      </label>
+      <label class="field">
+        <span class="field__label">地图分享链接</span>
+        <input class="input" name="map" placeholder="粘贴高德 / 大众点评 / 其他地图分享链接" required />
+      </label>
+
+      <div class="editform__actions">
+        <button class="btn btn--primary" type="submit">➕ 添加推荐</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+<details class="collapse collapse--food-search" {% if food_has_query %}open{% endif %}>
+  <summary>
+    <span>🔎 搜索推荐</span>
+    <span class="collapse__hint">点击展开</span>
+  </summary>
+  <div class="collapse__body">
+    <form class="library-search" method="get" action="/guide/food">
+      <div class="library-search__inner">
+        <input class="input library-search__input" type="search" name="q" value="{{ food_query }}"
+          placeholder="搜索岩馆 / 店名 / 推荐理由 / 推荐人" />
+        <button class="btn btn--secondary library-search__btn" type="submit">搜索</button>
+        {% if food_has_query %}
+        <a class="btn btn--ghost library-search__clear" href="/guide/food">清空</a>
+        {% endif %}
+      </div>
+    </form>
+    <div class="food-search__status">
+      {% if food_has_query %}
+      当前搜索：<strong>{{ food_query }}</strong>，共找到 {{ food_filtered_count }} / {{ food_total_count }} 条推荐
+      {% else %}
+      支持按岩馆、店名、推荐理由、推荐人搜索
+      {% endif %}
+    </div>
+  </div>
+</details>
+
+<section class="callout">
+  <div class="callout__title">📍 推荐列表（按岩馆）</div>
+  <div class="callout__body">
+    {% if food_reco_groups|length == 0 %}
+    <div class="muted">
+      {% if food_has_query %}
+      没有找到和 “{{ food_query }}” 相关的推荐，试试换个关键词。
+      {% else %}
+      暂无美食推荐。欢迎成为第一个推荐的人！
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="food-groups">
+      {% for group in food_reco_groups %}
+      <details class="food-group" {% if loop.first %}open{% endif %}>
+        <summary class="food-group__header">
+          <div class="food-group__title">📍 {{ group.gym }}</div>
+          <div class="food-group__meta">
+            <div class="food-group__count">{{ group.recos|length }} 条</div>
+            <div class="food-group__toggle" aria-hidden="true"></div>
+          </div>
+        </summary>
+        <div class="food-group__body">
+          <div class="food-grid">
+            {% for r in group.recos %}
+            <article class="food-item">
+              <div class="food-item__top">
+                <div class="food-item__name">{{ r.store_name }}</div>
+                <div class="food-item__actions">
+                  <form class="inline" method="post" action="/guide/food/{{ r.id }}/delete"
+                    data-confirm="确定删除这条美食推荐吗？&#10;岩馆：{{ group.gym }}&#10;店名：{{ r.store_name }}">
+                    <input type="hidden" name="return_q" value="{{ food_query }}" />
+                    <button class="btn btn--ghost btn--small" type="submit">🗑️</button>
+                  </form>
+                </div>
+              </div>
+              <div class="food-item__meta">
+                <span class="food-item__by">推荐人：<strong>{{ r.recommender or '匿名' }}</strong></span>
+                <span class="food-item__time">{{ r.created_at }}</span>
+              </div>
+              <div class="food-item__reason{% if not r.reason %} food-item__reason--empty{% endif %}">{{ r.reason or '占位' }}</div>
+              {% if r.map_links %}
+              <div class="map-links" role="group" aria-label="地图导航">
+                <div class="map-links__head">
+                  <span class="map-links__label">地图导航</span>
+                  <span class="map-links__hint">高德打开</span>
+                </div>
+                <div class="map-links__list{% if r.map_links|length == 1 %} map-links__list--single{% endif %}">
+                  {% for link in r.map_links %}
+                  <a class="map-links__btn
+                    {% if link.platform == 'pc' %}map-links__btn--pc{% elif link.platform == 'mobile' %}map-links__btn--mobile{% else %}map-links__btn--all{% endif %}"
+                    href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+                    <span class="map-links__icon">{% if link.platform == 'pc' %}🖥️{% elif link.platform == 'mobile' %}📱{% else %}🧭{% endif %}</span>
+                    <span class="map-links__text">
+                      <span class="map-links__name">{{ link.name }}</span>
+                      <span class="map-links__platform">
+                        {% if link.platform == 'pc' %}适合电脑打开{% elif link.platform == 'mobile' %}适合手机打开{% else %}设备通用{% endif %}
+                      </span>
+                    </span>
+                    <span class="map-links__arrow" aria-hidden="true">↗</span>
+                  </a>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endif %}
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+

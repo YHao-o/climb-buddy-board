@@ -21,7 +21,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import db as guide_db
 
@@ -33,8 +33,10 @@ ASSETS_DIR = ROOT / "static"
 TEMPLATES_DIR = ROOT / "templates"
 DB_PATH = ROOT / "data.db"
 DOCS_DIR = ROOT / "library_files"
+CONTRIB_DIR = ROOT / "contribute"
 # 站点基础地址（用于生成邀请/复制链接）
-BASE_URL ="http://127.0.0.1:8000"
+#BASE_URL ="https://panyanfor.fun"
+BASE_URL = "http:120.79.176.134:8000"
 
 # 审计日志（按 IP 记录关键操作）
 LOG_DIR = ROOT / "logs"
@@ -58,6 +60,30 @@ DEFAULT_TICKET_TIPS = [
     "福田文体通",
 ]
 
+# 约攀页地点列表（也用于“指南-美食推荐”的岩馆分区）
+CLIMBING_GYMS = [
+    "香蕉攀岩(金蝶店)",
+    "香蕉攀岩(后海汇店)",
+    "香蕉攀岩(卓悦汇店)",
+    "香蕉攀岩(宝安中心店)",
+    "香蕉攀岩(领展中心城店)",
+    "香蕉攀岩(iN城市广场店)",
+    "香蕉攀岩(BANANA+/嘉乐道店)",
+    "Upper(深康店)",
+    "Upper(南光店)",
+    "Upper(龙华店)",
+    "闪电攀岩(深圳湾店)",
+    "闪电攀岩(岗厦北店)",
+    "普岚体育(南山店)",
+    "CUBE(宝安店)",
+    "CUBE(罗湖店)",
+    "呢度有家攀岩馆",
+    "嗰度有家攀岩馆",
+    "岩浪攀岩馆",
+    "蓝天攀岩馆",
+    "户外",
+]
+
 
 app = FastAPI(title="深圳爬墙区新手村指南", version="0.2.0")
 ENABLE_RELOAD = os.getenv("ENABLE_GUIDE_RELOAD", "0") == "1"
@@ -74,6 +100,9 @@ if ASSETS_DIR.exists():
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
+# Contributors avatars (from repo folder)
+CONTRIB_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/contribute", StaticFiles(directory=str(CONTRIB_DIR)), name="contribute")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -373,6 +402,33 @@ def _validate_file_content(content: bytes, suffix: str) -> bool:
         if content[:len(sig)] == sig:
             return True
     return False
+
+
+def _normalize_bool(v: Any) -> bool:
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    return s in {"1", "true", "yes", "on"}
+
+
+def _list_contributors_from_folder() -> list[dict[str, Any]]:
+    """
+    List contributors from `contribute/` folder:
+    - each *.ico file => one contributor
+    - filename stem => nickname
+    """
+    out: list[dict[str, Any]] = []
+    try:
+        files = [p for p in CONTRIB_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".ico"]
+    except Exception:
+        files = []
+    files.sort(key=lambda p: p.stem.lower())
+    for p in files:
+        nickname = (p.stem or "").strip()
+        if not nickname:
+            continue
+        out.append({"nickname": nickname, "avatar_filename": p.name})
+    return out
 
 
 def _count_today_uploads() -> int:
@@ -719,6 +775,7 @@ def guide(
     uploaded: str | None = Query(default=None, description="Last uploaded filename"),
     edit: int = Query(default=0, ge=0, le=1, description="Edit mode (0/1)"),
     err: str | None = Query(default=None, description="Error message"),
+    msg: str | None = Query(default=None, description="Success message"),
 ):
     wb = load_workbook()
     active_sheet = sheet or (wb.sheets[0].name if wb.sheets else "")
@@ -773,6 +830,7 @@ def guide(
             "enable_edit": True,
             "edit": bool(edit),
             "err": err or "",
+            "msg": msg or "",
             "shoes_tips_text": shoes_text,
             "shoes_tips_lines": shoes_lines,
             "shoes_tips_version": shoes_version,
@@ -970,6 +1028,121 @@ async def library_delete(request: Request, filename: str):
         return RedirectResponse(url="/library?err=删除失败，请稍后重试", status_code=303)
 
 
+@app.get("/suggestions", response_class=HTMLResponse)
+# 建设建议（可匿名/署名）
+async def suggestions_page(request: Request, err: str | None = None, msg: str | None = None):
+    contributors = _list_contributors_from_folder()
+    conn = get_conn()
+    try:
+        suggestions = guide_db.list_suggestions(conn, limit=200)
+    finally:
+        conn.close()
+    return templates.TemplateResponse(
+        "suggestions.html",
+        {
+            "request": request,
+            "title": "建设建议",
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
+            "images_mounted": True,
+            "err": err or "",
+            "msg": msg or "",
+            "suggestions": suggestions,
+            "contributors": contributors,
+        },
+    )
+
+
+@app.post("/suggestions/new")
+async def suggestions_new(request: Request):
+    form = await request.form()
+    content = str(form.get("content") or "").strip()
+    nickname = str(form.get("nickname") or "").strip()
+    is_anonymous = _normalize_bool(form.get("anonymous"))
+
+    if not content:
+        _audit("suggestion_create_failed_no_content", request=request, is_anonymous=is_anonymous)
+        return RedirectResponse(url="/suggestions?err=请填写建议内容", status_code=303)
+    if len(content) > 2000:
+        _audit(
+            "suggestion_create_failed_too_long",
+            request=request,
+            is_anonymous=is_anonymous,
+            content_len=len(content),
+        )
+        return RedirectResponse(url="/suggestions?err=建议内容太长（最多2000字）", status_code=303)
+
+    avatar_filename = ""
+    # If anonymous, ignore nickname/avatar
+    if is_anonymous:
+        nickname = ""
+    else:
+        if not nickname:
+            _audit("suggestion_create_failed_no_nickname", request=request)
+            return RedirectResponse(url="/suggestions?err=署名提交请填写群昵称，或勾选匿名", status_code=303)
+        if len(nickname) > 40:
+            return RedirectResponse(url="/suggestions?err=昵称太长（最多40字）", status_code=303)
+
+        # 记录 IP-昵称关联（复用既有逻辑）
+        _record_ip_nickname(_client_ip(request), nickname)
+
+    conn = get_conn()
+    try:
+        suggestion_id = guide_db.insert_suggestion(
+            conn,
+            content=content,
+            is_anonymous=is_anonymous,
+            nickname=nickname,
+            avatar_filename=avatar_filename,
+        )
+    finally:
+        conn.close()
+
+    _audit(
+        "suggestion_create",
+        request=request,
+        suggestion_id=suggestion_id,
+        is_anonymous=is_anonymous,
+        nickname=nickname if nickname else None,
+        content_len=len(content),
+        has_avatar=bool(avatar_filename),
+    )
+    return RedirectResponse(url="/suggestions?msg=提交成功，感谢共建！", status_code=303)
+
+
+@app.post("/suggestions/{suggestion_id}/delete")
+async def suggestions_delete(request: Request, suggestion_id: int):
+    conn = get_conn()
+    try:
+        ok = guide_db.delete_suggestion(conn, suggestion_id=suggestion_id)
+    finally:
+        conn.close()
+    _audit("suggestion_delete", request=request, suggestion_id=suggestion_id, ok=ok)
+    if not ok:
+        return RedirectResponse(url="/suggestions?err=建议不存在或已被删除", status_code=303)
+    return RedirectResponse(url="/suggestions?msg=已删除", status_code=303)
+
+
+@app.post("/suggestions/{suggestion_id}/done")
+async def suggestions_set_done(request: Request, suggestion_id: int):
+    form = await request.form()
+    is_done = _normalize_bool(form.get("is_done"))
+    conn = get_conn()
+    try:
+        ok = guide_db.set_suggestion_done(conn, suggestion_id=suggestion_id, is_done=is_done)
+    finally:
+        conn.close()
+    _audit(
+        "suggestion_set_done",
+        request=request,
+        suggestion_id=suggestion_id,
+        ok=ok,
+        is_done=is_done,
+    )
+    if not ok:
+        return RedirectResponse(url="/suggestions?err=建议不存在或已被删除", status_code=303)
+    return RedirectResponse(url="/suggestions?msg=已更新", status_code=303)
+
+
 @app.post("/guide/settings/update")
 # 更新指南设置
 async def update_guide_settings(request: Request):
@@ -1024,6 +1197,282 @@ async def update_guide_settings(request: Request):
     if not (ok_shoes and ok_ticket):
         params.append(f"err={_urlencode('内容已被其他人更新，请刷新后再试')}")
     return RedirectResponse(url=f"/guide?{'&'.join(params)}", status_code=303)
+
+
+def _normalize_map_url(value: str) -> str:
+    s = (value or "").strip()
+    if not s:
+        return ""
+    m = re.search(r"https?://\S+", s, re.I)
+    if m:
+        # 用户可能粘贴整段分享文案；若其中包含 URL，则优先只保留链接本身。
+        return m.group(0).rstrip('.,;:!?)>]}，。；：！？）》」』】、')
+    return ""
+
+
+def _extract_map_keyword(map_url: str) -> str | None:
+    """从地图 URL 中提取关键词，用于生成高德导航链接。"""
+    if not map_url:
+        return None
+    for pattern in (
+        r"^https?://uri\.amap\.com/search\?(?:[^#]*&)?keyword=([^&#]+)",
+        r"^https?://(?:www\.)?amap\.com/search\?(?:[^#]*&)?query=([^&#]+)",
+        r"^https?://(?:map\.)?baidu\.com/search/([^/?#]+)",
+        r"^https?://map\.qq\.com/\?(?:[^#]*&)?keyword=([^&#]+)",
+    ):
+        m = re.match(pattern, map_url, re.I)
+        if m:
+            return unquote(m.group(1))
+    try:
+        query_params = parse_qs(urlparse(map_url).query)
+    except Exception:
+        return None
+    for key in ("keyword", "query", "wd", "name", "address"):
+        values = query_params.get(key)
+        if values and str(values[0]).strip():
+            return str(values[0]).strip()
+    if not re.match(r"^https?://", map_url, re.I):
+        return str(map_url).strip() or None
+    return None
+
+
+def _build_map_links(map_url: str) -> list[dict[str, str]]:
+    """根据存储的 map_url 生成地图跳转链接。"""
+    if not map_url:
+        return []
+    return [{"name": "打开地图", "url": map_url, "platform": "all"}]
+
+
+def _build_guide_return_url(
+    *,
+    sheet: str,
+    q: str,
+    column: str,
+    value: str,
+    view: str,
+    edit: str,
+    extra_params: list[str] | None = None,
+    anchor: str | None = None,
+) -> str:
+    params = [
+        f"sheet={_urlencode(sheet)}",
+        f"q={_urlencode(q)}",
+        f"column={_urlencode(column)}",
+        f"value={_urlencode(value)}",
+        f"view={_urlencode(view)}",
+    ]
+    if str(edit or "").strip() in ("1", "true", "True", "yes", "on"):
+        params.append("edit=1")
+    for p in (extra_params or []):
+        if p:
+            params.append(p)
+    url = f"/guide?{'&'.join(params)}"
+    if anchor:
+        url += f"#{anchor}"
+    return url
+
+
+def _group_food_recos(food_recos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    food_groups_map: dict[str, list[dict[str, Any]]] = {}
+    for r in (food_recos or []):
+        gym = str(r.get("gym") or "").strip() or "其他"
+        r["map_links"] = _build_map_links(r.get("map_url", ""))
+        food_groups_map.setdefault(gym, []).append(r)
+
+    food_groups: list[dict[str, Any]] = []
+    for gym in CLIMBING_GYMS:
+        recos = food_groups_map.pop(gym, [])
+        if recos:
+            food_groups.append({"gym": gym, "recos": recos})
+    for gym in sorted(food_groups_map.keys()):
+        recos = food_groups_map[gym]
+        if recos:
+            food_groups.append({"gym": gym, "recos": recos})
+    return food_groups
+
+
+def _filter_food_recos(food_recos: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    q = str(query or "").strip().lower()
+    if not q:
+        return list(food_recos or [])
+
+    filtered: list[dict[str, Any]] = []
+    for r in (food_recos or []):
+        haystack = " ".join(
+            [
+                str(r.get("gym") or ""),
+                str(r.get("store_name") or ""),
+                str(r.get("recommender") or ""),
+                str(r.get("reason") or ""),
+                str(r.get("map_url") or ""),
+            ]
+        ).lower()
+        if q in haystack:
+            filtered.append(r)
+    return filtered
+
+
+def _build_food_page_url(*, q: str = "", err: str = "", msg: str = "") -> str:
+    params: list[str] = []
+    q = str(q or "").strip()
+    err = str(err or "").strip()
+    msg = str(msg or "").strip()
+    if q:
+        params.append(f"q={_urlencode(q)}")
+    if err:
+        params.append(f"err={_urlencode(err)}")
+    if msg:
+        params.append(f"msg={_urlencode(msg)}")
+    return "/guide/food" + (f"?{'&'.join(params)}" if params else "")
+
+
+@app.get("/guide/food", response_class=HTMLResponse)
+async def guide_food_page(
+    request: Request,
+    err: str | None = None,
+    msg: str | None = None,
+    q: str | None = None,
+):
+    wb = load_workbook()
+    conn = get_conn()
+    try:
+        food_recos = guide_db.list_food_recommendations(conn, limit=400)
+    finally:
+        conn.close()
+    food_query = str(q or "").strip()
+    filtered_food_recos = _filter_food_recos(food_recos, food_query)
+    return templates.TemplateResponse(
+        "food.html",
+        {
+            "request": request,
+            "title": "深圳爬墙区新手村指南",
+            "excel_exists": (EXCEL_PATH.exists() or DB_PATH.exists()),
+            "workbook": wb,
+            "err": err or "",
+            "msg": msg or "",
+            "climbing_gyms": CLIMBING_GYMS,
+            "food_query": food_query,
+            "food_has_query": bool(food_query),
+            "food_total_count": len(food_recos),
+            "food_filtered_count": len(filtered_food_recos),
+            "food_reco_groups": _group_food_recos(filtered_food_recos),
+        },
+    )
+
+
+@app.post("/guide/food/new")
+async def guide_food_new(request: Request):
+    form = await request.form()
+    return_q = str(form.get("return_q") or "").strip()
+    gym = str(form.get("gym") or "").strip()
+    store_name = str(form.get("store_name") or "").strip()
+    recommender = str(form.get("recommender") or "").strip() or "匿名"
+    reason = str(form.get("reason") or "").strip()
+    map_raw = str(form.get("map") or "").strip()
+    map_url = _normalize_map_url(map_raw)
+
+    if not gym:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="请选择或填写岩馆"),
+            status_code=303,
+        )
+    if len(gym) > 80:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="岩馆名称太长（最多80字）"),
+            status_code=303,
+        )
+    if not store_name:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="请填写推荐店名"),
+            status_code=303,
+        )
+    if len(store_name) > 80:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="店名太长（最多80字）"),
+            status_code=303,
+        )
+    if len(recommender) > 40:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="推荐人昵称太长（最多40字）"),
+            status_code=303,
+        )
+    if len(reason) > 400:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="推荐理由太长（最多400字）"),
+            status_code=303,
+        )
+    if not map_url:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="请粘贴地图分享链接"),
+            status_code=303,
+        )
+    if len(map_url) > 800:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="定位信息太长（最多800字）"),
+            status_code=303,
+        )
+
+    conn = get_conn()
+    try:
+        rid = guide_db.insert_food_recommendation(
+            conn,
+            gym=gym,
+            recommender=recommender,
+            store_name=store_name,
+            reason=reason,
+            map_url=map_url,
+        )
+    finally:
+        conn.close()
+
+    _audit(
+        "guide_food_reco_create",
+        request=request,
+        id=rid,
+        gym=gym,
+        store_name=store_name,
+        recommender=recommender,
+        map_is_url=bool(re.match(r"^https?://", map_url, re.I)),
+    )
+
+    return RedirectResponse(
+        url=_build_food_page_url(q=return_q, msg="已添加美食推荐"),
+        status_code=303,
+    )
+
+
+@app.get("/guide/food/new")
+async def guide_food_new_get():
+    # This endpoint is meant for form POST. For direct browser visits, redirect back to guide.
+    return RedirectResponse(url="/guide/food", status_code=302)
+
+
+@app.post("/guide/food/{recommendation_id}/delete")
+async def guide_food_delete(request: Request, recommendation_id: int):
+    form = await request.form()
+    return_q = str(form.get("return_q") or request.query_params.get("q") or "").strip()
+
+    conn = get_conn()
+    try:
+        ok = guide_db.delete_food_recommendation(conn, recommendation_id=int(recommendation_id))
+    finally:
+        conn.close()
+
+    _audit("guide_food_reco_delete", request=request, id=int(recommendation_id), ok=ok)
+    if not ok:
+        return RedirectResponse(
+            url=_build_food_page_url(q=return_q, err="该推荐不存在或已被删除"),
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=_build_food_page_url(q=return_q, msg="已删除"),
+        status_code=303,
+    )
+
+
+@app.get("/guide/food/{recommendation_id}/delete")
+async def guide_food_delete_get(recommendation_id: int):
+    return RedirectResponse(url="/guide/food", status_code=302)
 
 
 # 解析时间输入

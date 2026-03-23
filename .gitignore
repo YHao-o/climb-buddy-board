@@ -1,8 +1,8 @@
 __pycache__
 data.db*
-app.log
+*.log
+*.json
 *.xlsx
 library_files/*
 图片/*
-logs
-.venv
+

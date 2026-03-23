@@ -110,16 +110,26 @@
       <div class="form-grid">
         <label class="field">
           <span class="field__label">时间</span>
-          <input id="climbing-time" class="input" type="datetime-local" name="when" required/>
+          <input id="climbing-time" class="input" type="datetime-local" name="when" required />
         </label>
         <label class="field">
           <span class="field__label">地点</span>
-          <input class="input" name="location" placeholder="香蕉 / 岩时 / 户外点…" required list="climbing-gym" />
+          <div class="combo" id="location-combo">
+            <input class="input combo__input" id="climbing-location" name="location" placeholder="香蕉 / 岩时 / 户外点…" required
+              list="climbing-gym" autocomplete="off" autocapitalize="off" spellcheck="false" aria-autocomplete="list"
+              aria-expanded="false" aria-controls="location-suggest" />
+            <button class="btn btn--secondary btn--small combo__btn" type="button" id="location-open"
+              aria-label="选择地点">
+              选择
+            </button>
+            <div class="combo__panel" id="location-suggest" role="listbox" aria-label="地点建议" hidden></div>
+          </div>
           <datalist id="climbing-gym">
 
             <!-- 香蕉攀岩 -->
             <option value="香蕉攀岩(金蝶店)"></option>
             <option value="香蕉攀岩(后海汇店)"></option>
+            <option value="香蕉攀岩(卓悦汇店)"></option>
             <option value="香蕉攀岩(宝安中心店)"></option>
             <option value="香蕉攀岩(领展中心城店)"></option>
             <option value="香蕉攀岩(iN城市广场店)"></option>
@@ -129,6 +139,16 @@
             <option value="Upper(南光店)"></option>
             <option value="Upper(龙华店)"></option>
 
+            <option value="闪电攀岩(深圳湾店)"></option>
+            <option value="闪电攀岩(岗厦北店)"></option>
+
+            <option value="普岚体育(南山店)"></option>
+            <option value="CUBE(宝安店)"></option>
+            <option value="CUBE(罗湖店)"></option>
+            <option value="呢度有家攀岩馆"></option>
+            <option value="嗰度有家攀岩馆"></option>
+            <option value="岩浪攀岩馆"></option>
+            <option value="蓝天攀岩馆"></option>
             <option value="户外"></option>
           </datalist>
         </label>
@@ -650,16 +670,198 @@
 </script>
 
 <script>
-    // 发起约攀：设置默认时间
-    document.addEventListener('DOMContentLoaded', () => {
-      const dateControl = document.querySelector('#climbing-time');
-      const defaultDate = new Date();
-      // 判断时区, 调整为东8区时间
-      defaultDate.setMinutes(defaultDate.getMinutes() - defaultDate.getTimezoneOffset());
-      // 按1刻钟取整
-      defaultDate.setMinutes(Math.ceil(defaultDate.getMinutes() / 15) * 15);
-      dateControl.value = defaultDate.toISOString().slice(0,16);
+  // 地点：移动端友好的可输入 + 可点选
+  document.addEventListener('DOMContentLoaded', () => {
+    const combo = document.getElementById('location-combo')
+    const input = document.getElementById('climbing-location')
+    const panel = document.getElementById('location-suggest')
+    const openBtn = document.getElementById('location-open')
+    const datalist = document.getElementById('climbing-gym')
+    if (!combo || !input || !panel || !openBtn || !datalist) return
+
+    const all = Array.from(datalist.querySelectorAll('option'))
+      .map(o => String(o.getAttribute('value') || '').trim())
+      .filter(Boolean)
+    const uniq = Array.from(new Set(all))
+
+    const isMobile = () => window.matchMedia && window.matchMedia('(max-width: 600px)').matches
+
+    const setExpanded = (v) => {
+      input.setAttribute('aria-expanded', v ? 'true' : 'false')
+    }
+
+    const hidePanel = () => {
+      if (panel.hidden) return
+      panel.hidden = true
+      panel.innerHTML = ''
+      setExpanded(false)
+    }
+
+    const showPanel = (items) => {
+      panel.innerHTML = ''
+      if (!items || items.length === 0) {
+        hidePanel()
+        return
+      }
+      items.forEach(text => {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'combo__item'
+        btn.textContent = text
+        btn.addEventListener('click', () => {
+          input.value = text
+          hidePanel()
+          input.focus()
+        })
+        panel.appendChild(btn)
+      })
+      panel.hidden = false
+      setExpanded(true)
+    }
+
+    const filter = (q) => {
+      const s = String(q || '').trim()
+      if (!s) return uniq.slice(0, 10)
+      const ss = s.toLowerCase()
+      const starts = []
+      const contains = []
+      for (const v of uniq) {
+        const vv = v.toLowerCase()
+        if (vv.startsWith(ss)) starts.push(v)
+        else if (vv.includes(ss)) contains.push(v)
+        if (starts.length + contains.length >= 10) break
+      }
+      return starts.concat(contains).slice(0, 10)
+    }
+
+    const refresh = () => {
+      if (isMobile()) return // 移动端用底部弹层，避免和键盘打架
+      showPanel(filter(input.value))
+    }
+
+    input.addEventListener('focus', refresh)
+    input.addEventListener('input', refresh)
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hidePanel()
     })
+    document.addEventListener('click', (e) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (!combo.contains(t)) hidePanel()
+    })
+    input.addEventListener('blur', () => {
+      // 允许点击建议项
+      window.setTimeout(hidePanel, 120)
+    })
+
+    const ensureModal = () => {
+      let modal = document.getElementById('location-picker-modal')
+      if (modal) return modal
+
+      modal = document.createElement('div')
+      modal.id = 'location-picker-modal'
+      modal.className = 'modal modal--picker'
+      modal.setAttribute('aria-hidden', 'true')
+      modal.setAttribute('hidden', '')
+
+      modal.innerHTML = `
+        <div class="modal__backdrop" data-action="close"></div>
+        <div class="modal__dialog modal__dialog--sheet" role="dialog" aria-modal="true" aria-labelledby="locpicker-title">
+          <div class="picker">
+            <div class="picker__header">
+              <div class="picker__title" id="locpicker-title">选择地点</div>
+              <button class="btn btn--ghost btn--small" type="button" data-action="close" aria-label="关闭">✕</button>
+            </div>
+            <div class="picker__search">
+              <input class="input" type="search" placeholder="搜索地点（也可以直接手动输入）" />
+            </div>
+            <div class="picker__list" role="listbox" aria-label="地点列表"></div>
+            <div class="picker__footer">
+              <button class="btn btn--secondary" type="button" data-action="clear">清空</button>
+              <button class="btn btn--primary" type="button" data-action="use">使用当前输入</button>
+            </div>
+          </div>
+        </div>
+      `
+      document.body.appendChild(modal)
+      return modal
+    }
+
+    const openModal = () => {
+      const modal = ensureModal()
+      const list = modal.querySelector('.picker__list')
+      const search = modal.querySelector('.picker__search input')
+      if (!(list instanceof HTMLElement) || !(search instanceof HTMLInputElement)) return
+
+      const render = (q) => {
+        const items = filter(q)
+        list.innerHTML = ''
+        items.forEach(v => {
+          const b = document.createElement('button')
+          b.type = 'button'
+          b.className = 'picker__item'
+          b.textContent = v
+          b.addEventListener('click', () => {
+            input.value = v
+            closeModal()
+            input.focus()
+          })
+          list.appendChild(b)
+        })
+      }
+
+      const closeModal = () => {
+        modal.classList.remove('modal--open')
+        modal.setAttribute('hidden', '')
+        modal.setAttribute('aria-hidden', 'true')
+      }
+
+      render(input.value)
+      search.value = input.value || ''
+      search.oninput = () => render(search.value)
+
+      modal.addEventListener('click', (ev) => {
+        const target = ev.target
+        if (!(target instanceof HTMLElement)) return
+        const action = target.dataset.action
+        if (action === 'close') closeModal()
+        if (action === 'clear') {
+          input.value = ''
+          search.value = ''
+          render('')
+        }
+        if (action === 'use') {
+          input.value = search.value.trim()
+          closeModal()
+          input.focus()
+        }
+      }, { once: true })
+
+      modal.classList.add('modal--open')
+      modal.removeAttribute('hidden')
+      modal.setAttribute('aria-hidden', 'false')
+      window.setTimeout(() => search.focus(), 50)
+    }
+
+    openBtn.addEventListener('click', () => {
+      if (isMobile()) openModal()
+      else {
+        input.focus()
+        refresh()
+      }
+    })
+  })
+
+  // 发起约攀：设置默认时间
+  document.addEventListener('DOMContentLoaded', () => {
+    const dateControl = document.querySelector('#climbing-time')
+    const defaultDate = new Date()
+    // 判断时区, 调整为东8区时间
+    defaultDate.setMinutes(defaultDate.getMinutes() - defaultDate.getTimezoneOffset())
+    // 按1刻钟取整
+    defaultDate.setMinutes(Math.ceil(defaultDate.getMinutes() / 15) * 15)
+    dateControl.value = defaultDate.toISOString().slice(0, 16)
+  })
 
   // 村历：固定 2s 刷新
   document.addEventListener('DOMContentLoaded', () => {
