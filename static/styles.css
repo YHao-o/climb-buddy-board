@@ -2667,10 +2667,13 @@ form.inline {
   background: linear-gradient(135deg, rgba(96,165,250,0.16) 0%, rgba(168,85,247,0.10) 100%);
 }
 
+<<<<<<< HEAD
 .collapse--food-search summary {
   background: linear-gradient(135deg, rgba(96,165,250,0.14) 0%, rgba(78,205,196,0.10) 100%);
 }
 
+=======
+>>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
 .collapse--weekboard summary {
   background: linear-gradient(135deg, rgba(255,217,61,0.16) 0%, rgba(102,126,234,0.10) 100%);
 }
@@ -2717,10 +2720,13 @@ form.inline {
   font-size: 0;
 }
 
+<<<<<<< HEAD
 .collapse--food-search .collapse__hint {
   font-size: 0;
 }
 
+=======
+>>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
 /* ========================================
    Suggestions / Contributors
    ======================================== */

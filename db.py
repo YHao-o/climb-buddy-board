@@ -169,6 +169,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_suggestions_nickname ON suggestions(nickname)"
         )
+<<<<<<< HEAD
 
         # 美食推荐（按岩馆分区）
         cur.execute(
@@ -190,6 +191,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_food_recos_gym ON food_recommendations(gym)"
         )
+=======
+>>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
         
         # Migration for older dbs
         cur.execute("PRAGMA table_info(events)")
@@ -341,6 +344,7 @@ def list_suggestion_contributors(
         )
     return out
 
+<<<<<<< HEAD
 
 # ============ Food Recommendations ============
 
@@ -402,6 +406,8 @@ def delete_food_recommendation(conn: sqlite3.Connection, *, recommendation_id: i
         cur.execute("DELETE FROM food_recommendations WHERE id=?", (int(recommendation_id),))
         return cur.rowcount > 0
 
+=======
+>>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
 
 # 判断是否有数据
 def has_any_data(conn: sqlite3.Connection) -> bool:
