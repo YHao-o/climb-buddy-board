@@ -1,0 +1,11 @@
+<section class="feed" id="feed-list">
+  {% for it in feed_items %}
+  <div class="feed__item feed__item--{{ it.action }}">
+    <span class="feed__icon">{{ it.icon }}</span>
+    <span class="feed__text"><strong>{{ it.actor }}</strong> {{ it.verb }} {{ it.when }} {{ it.location }}</span>
+    <span class="feed__time">{{ it.relative_time }}</span>
+  </div>
+  {% else %}
+  <p class="view-placeholder">还没有动态</p>
+  {% endfor %}
+</section>

@@ -1,0 +1,55 @@
+<section class="list-view">
+  {% if active_date or active_period %}
+  <div class="list-view__filter">
+    已筛选{% if active_date %} {{ active_date }}{% endif %}{% if active_period %} · {{ active_period }}{% endif %}
+    <a class="link" href="/events?view=list">清除</a>
+  </div>
+  {% endif %}
+  {% for g in list_groups %}
+  <div class="list-group {{ 'list-group--past' if g.is_past else '' }}">
+    <div class="list-group__bar">{{ g.title }}{% if g.is_today %} · 今天{% endif %}</div>
+    <div class="events-grid">
+      {% for e in g.events %}
+      <article class="event-card" data-event-id="{{ e.id }}">
+        <div class="event-card__header">
+          <div class="event-card__time">{{ e.time_text }} · {{ e.start_text_weekday }}</div>
+        </div>
+        <div class="event-card__body">
+          <div class="event-card__location">{{ e.location }}</div>
+          <div class="event-card__host">发起人：<strong>{{ e.host_nickname or e.nickname }}</strong></div>
+        </div>
+        <div class="participants">
+          <div class="participants__title">已报名 ({{ e.participants|length }}人)</div>
+          {% if e.participants|length > 0 %}
+          <div class="participants__list">
+            {% for p in e.participants %}
+            <span class="participant">{{ p }}
+              <form method="post" action="/events/{{ e.id }}/leave" class="inline"
+                data-confirm="确认取消报名？&#10;{{ e.location }}&#10;昵称：{{ p }}">
+                <input type="hidden" name="nickname" value="{{ p }}" />
+                <button type="submit" class="participant__remove" title="取消报名">×</button>
+              </form>
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}<p class="participants__empty">暂无人报名，快来第一个！</p>{% endif %}
+          <form method="post" action="/events/{{ e.id }}/join" class="participants__join">
+            <input class="input" name="nickname" placeholder="我也要去（填昵称）" required />
+            <button class="btn btn--primary btn--small" type="submit">🙋 报名</button>
+          </form>
+        </div>
+        <div class="event-card__actions">
+          <form method="post" action="/events/{{ e.id }}/delete" class="inline"
+            data-confirm="确认删除这条活动？&#10;{{ e.start_text }}｜{{ e.location }}">
+            <button class="btn btn--ghost btn--small" type="submit">🗑️ 删除</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <section class="empty-state"><div class="empty-state__icon">🏔️</div>
+    <h3 class="empty-state__title">这里还没有活动</h3></section>
+  {% endfor %}
+</section>

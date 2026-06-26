@@ -169,7 +169,23 @@ def init_db(conn: sqlite3.Connection) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_suggestions_nickname ON suggestions(nickname)"
         )
-<<<<<<< HEAD
+
+        # 动态流（活动操作快照，支撑 Feed）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS event_activities (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              event_id INTEGER NULL,
+              action TEXT NOT NULL,
+              actor TEXT NOT NULL DEFAULT '',
+              location TEXT NOT NULL DEFAULT '',
+              start_text TEXT NOT NULL DEFAULT '',
+              ts INTEGER NOT NULL,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_event_activities_ts ON event_activities(ts)")
 
         # 美食推荐（按岩馆分区）
         cur.execute(
@@ -191,8 +207,6 @@ def init_db(conn: sqlite3.Connection) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_food_recos_gym ON food_recommendations(gym)"
         )
-=======
->>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
         
         # Migration for older dbs
         cur.execute("PRAGMA table_info(events)")
@@ -344,7 +358,6 @@ def list_suggestion_contributors(
         )
     return out
 
-<<<<<<< HEAD
 
 # ============ Food Recommendations ============
 
@@ -406,8 +419,6 @@ def delete_food_recommendation(conn: sqlite3.Connection, *, recommendation_id: i
         cur.execute("DELETE FROM food_recommendations WHERE id=?", (int(recommendation_id),))
         return cur.rowcount > 0
 
-=======
->>>>>>> 5d61849c03d2500b6349a1f5833df693fde21a3b
 
 # 判断是否有数据
 def has_any_data(conn: sqlite3.Connection) -> bool:
@@ -621,22 +632,10 @@ def list_events_expired(conn: sqlite3.Connection, *, now_ts: int, limit: int = 5
     return out
 
 
-# 清理过期活动
-def cleanup_expired_events(conn: sqlite3.Connection, *, now_ts: int, keep_limit: int = 5) -> int:
-    """Delete expired events beyond the most recent keep_limit rows."""
+# 清理过期活动（删除 start_ts < cutoff_ts 的活动）
+def cleanup_expired_events(conn: sqlite3.Connection, *, cutoff_ts: int) -> int:
     with transaction(conn) as cur:
-        cur.execute(
-            """
-            DELETE FROM events
-            WHERE id IN (
-              SELECT id FROM events
-              WHERE start_ts < ?
-              ORDER BY start_ts DESC, id DESC
-              LIMIT -1 OFFSET ?
-            )
-            """,
-            (now_ts, keep_limit),
-        )
+        cur.execute("DELETE FROM events WHERE start_ts < ?", (cutoff_ts,))
         return cur.rowcount
 
 
@@ -868,3 +867,71 @@ def get_row_image(conn: sqlite3.Connection, *, image_id: int) -> dict[str, Any] 
     if not r:
         return None
     return dict(r)
+
+
+# ============ Event Activities (Feed) ============
+
+def insert_activity(
+    conn: sqlite3.Connection,
+    *,
+    event_id: int | None,
+    action: str,
+    actor: str,
+    location: str,
+    start_text: str,
+    ts: int,
+) -> int:
+    with transaction(conn) as cur:
+        cur.execute(
+            """
+            INSERT INTO event_activities(event_id, action, actor, location, start_text, ts)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (event_id, action, actor or "", location or "", start_text or "", int(ts)),
+        )
+        return int(cur.lastrowid)
+
+
+def list_activities(conn: sqlite3.Connection, *, limit: int = 100) -> list[dict[str, Any]]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, event_id, action, actor, location, start_text, ts, created_at
+        FROM event_activities
+        ORDER BY ts DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
+def prune_activities(conn: sqlite3.Connection, *, cutoff_ts: int) -> int:
+    with transaction(conn) as cur:
+        cur.execute("DELETE FROM event_activities WHERE ts < ?", (int(cutoff_ts),))
+        return cur.rowcount
+
+
+def backfill_activities_if_needed(conn: sqlite3.Connection) -> int:
+    """一次性：对存量 events 各补一条 create 动态。用 settings 键守卫，幂等。"""
+    flag = get_setting(conn, key="feed_backfilled")
+    if flag and str(flag.get("value")) == "1":
+        return 0
+    cur = conn.cursor()
+    cur.execute("SELECT id, start_ts, start_text, location, host_nickname, nickname FROM events")
+    rows = cur.fetchall()
+    n = 0
+    for r in rows:
+        actor = (r["host_nickname"] or r["nickname"] or "")
+        insert_activity(
+            conn,
+            event_id=int(r["id"]),
+            action="create",
+            actor=actor,
+            location=str(r["location"] or ""),
+            start_text=str(r["start_text"] or ""),
+            ts=int(r["start_ts"]),
+        )
+        n += 1
+    update_setting_safe(conn, key="feed_backfilled", value="1", expected_version=0)
+    return n

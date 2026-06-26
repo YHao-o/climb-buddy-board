@@ -1,0 +1,14 @@
+<section class="heat">
+  <div class="heat__head"><span></span><span>上午</span><span>下午</span><span>晚上</span></div>
+  {% for row in heatmap.rows %}
+  <div class="heat__row">
+    <span class="heat__wd">{{ row.weekday_label }}</span>
+    {% for cell in row.cells %}
+    <a class="heat__cell heat__cell--l{{ cell.level }}"
+       href="/events?view=list&period={{ cell.period }}"
+       title="{{ row.weekday_label }} {{ cell.count }} 个活动">{{ cell.count or '' }}</a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <p class="heat__summary">🔥 {{ heatmap.summary }}</p>
+</section>
