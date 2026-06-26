@@ -1,0 +1,52 @@
+{% set board_base_url = base_url if base_url else 'http://120.79.176.134:8000' %}
+{% set ns = namespace(text='本村周历') %}
+{% for day in week_board %}
+{% set ns.text = ns.text ~ '\\n\\n' ~ day.title %}
+{% if day["items"]|length > 0 %}
+{% for item in day["items"] %}
+{% set ns.text = ns.text ~ '\\n- 时间：' ~ item.time_text ~ ' 地点：' ~ item.location %}
+{% if item.is_active %}
+{% set detail_url = board_base_url ~ item.detail_url %}
+{% set ns.text = ns.text ~ ' 报名：' ~ detail_url %}
+{% endif %}
+{% endfor %}
+{% else %}
+{% set ns.text = ns.text ~ '\\n- 暂无安排' %}
+{% endif %}
+{% endfor %}
+
+<section class="week-board-block" aria-label="本村周历">
+  <section class="week-board">
+    <div class="week-board__header">
+      <div>
+        <h2 class="week-board__title">本村周历</h2>
+        <p class="week-board__subtitle">仅展示本周（周一～周日）</p>
+      </div>
+      <button class="btn btn--ghost btn--small" type="button" data-copy-text="{{ ns.text|e }}">一键复制</button>
+    </div>
+    <div class="week-board__body">
+      {% for day in week_board %}
+      <div class="week-day {{ 'week-day--today' if day.is_today else '' }}">
+        <div class="week-day__title">{{ day.title }}</div>
+        {% if day["items"]|length > 0 %}
+        <div class="week-day__items">
+          {% for item in day["items"] %}
+          <div class="week-day__item">
+            <span class="week-day__dot dot dot--{{ item.period }}"></span>
+            <span class="week-day__time">{{ item.time_text }}</span>
+            <span class="week-day__location">{{ item.location }}</span>
+            {% if item.is_active %}
+            {% set detail_url = board_base_url ~ item.detail_url %}
+            <a class="link week-day__link" href="{{ detail_url }}">报名</a>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="week-day__empty">暂无安排</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</section>

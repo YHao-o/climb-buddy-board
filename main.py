@@ -1497,21 +1497,19 @@ def _today_start_ts() -> int:
 
 _WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
 
+BOOKING_WINDOW_DAYS = 30
+RETENTION_DAYS = 61
+
+
+def _retention_cutoff_ts() -> int:
+    dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=RETENTION_DAYS)
+    return int(dt.timestamp())
+
 
 # 计算本周起始日
 def _start_of_week(d: datetime) -> datetime:
     # Monday as the first day of week
     return datetime(d.year, d.month, d.day) - timedelta(days=d.weekday())
-
-
-# 生成时间段文案
-def _format_period(hour: int) -> str:
-    # Rough time period label for the weekly board
-    if 5 <= hour < 12:
-        return "上午"
-    if 12 <= hour < 18:
-        return "下午"
-    return "晚上"
 
 
 # 生成含星期的时间文本
@@ -1533,12 +1531,29 @@ def _start_text_with_weekday(start_ts: int, start_text: str) -> str:
 @app.get("/", response_class=HTMLResponse)
 @app.get("/events", response_class=HTMLResponse)
 # 约攀列表页
-async def events_page(request: Request, err: str | None = None, msg: str | None = None):
+async def events_page(
+    request: Request,
+    err: str | None = None,
+    msg: str | None = None,
+    view: str = Query(default="week"),
+    anchor: str | None = Query(default=None),
+    date: str | None = Query(default=None),
+    period: str | None = Query(default=None),
+):
+    import calendar_views as cv
+
     conn = get_conn()
-    now_ts = int(time.time())
     today_start_ts = _today_start_ts()
-    # Cleanup only events before today (date-based expiration)
-    guide_db.cleanup_expired_events(conn, now_ts=today_start_ts, keep_limit=5)
+    # Cleanup events older than retention window + prune old feed activities
+    cutoff_ts = _retention_cutoff_ts()
+    guide_db.cleanup_expired_events(conn, cutoff_ts=cutoff_ts)
+    guide_db.prune_activities(conn, cutoff_ts=cutoff_ts)
+    guide_db.backfill_activities_if_needed(conn)
+
+    if view not in ("week", "month", "list", "free", "feed"):
+        view = "week"
+    today = datetime.now().date()
+
     until_ts = int((datetime.now() + timedelta(days=5)).timestamp())
     # Upcoming includes today (even if time already passed)
     upcoming = guide_db.list_events_upcoming(conn, now_ts=today_start_ts, until_ts=until_ts)
@@ -1548,52 +1563,46 @@ async def events_page(request: Request, err: str | None = None, msg: str | None 
         e["start_text_weekday"] = _start_text_with_weekday(e["start_ts"], e["start_text"])
     for e in expired:
         e["start_text_weekday"] = _start_text_with_weekday(e["start_ts"], e["start_text"])
-    today = datetime.now()
-    today_date = today.date()
-    # Weekly board window: current week (Mon-Sun)
-    week_start_dt = _start_of_week(today)
-    week_end_dt = week_start_dt + timedelta(days=7) - timedelta(seconds=1)
-    week_events = guide_db.list_events_between(
-        conn,
-        start_ts=int(week_start_dt.timestamp()),
-        end_ts=int(week_end_dt.timestamp()),
+
+    # Window events span retention..booking window for calendar/list/heatmap
+    window_start_ts = cutoff_ts
+    window_end_ts = int((datetime.now() + timedelta(days=BOOKING_WINDOW_DAYS)).timestamp())
+    window_events = guide_db.list_events_between(
+        conn, start_ts=window_start_ts, end_ts=window_end_ts
     )
+    for e in window_events:
+        e["start_text_weekday"] = _start_text_with_weekday(e["start_ts"], e["start_text"])
 
-    # Group events by date for week board rendering
-    week_events_by_date: dict[datetime.date, list[tuple[datetime, dict[str, Any]]]] = {}
-    for e in week_events:
-        event_dt = datetime.fromtimestamp(int(e["start_ts"]))
-        key = event_dt.date()
-        week_events_by_date.setdefault(key, []).append((event_dt, e))
+    week_board = cv.build_week(window_events, today=today, now_ts=today_start_ts)
 
-    # Build week board payload: 7 days with items
-    week_board: list[dict[str, Any]] = []
-    for i in range(7):
-        day_dt = week_start_dt + timedelta(days=i)
-        day_date = day_dt.date()
-        day_events = sorted(week_events_by_date.get(day_date, []), key=lambda item: item[0])
-        items: list[dict[str, Any]] = []
-        for event_dt, e in day_events:
-            items.append(
-                {
-                    # Display helpers for week board
-                    "period": _format_period(event_dt.hour),
-                    "location": e["location"],
-                    "time_text": event_dt.strftime("%H:%M"),
-                    "full_time": e["start_text"],
-                    # Date-based "active": today and future
-                    "is_active": int(e["start_ts"]) >= today_start_ts,
-                    "detail_url": f"/events/{e['id']}",
-                }
-            )
-        day_title = f"{day_dt.month}.{day_dt.day}（周{_WEEKDAY_LABELS[day_dt.weekday()]}）"
-        week_board.append(
-            {
-                "title": day_title,
-                "items": items,
-                "is_today": day_date == today_date,
-            }
-        )
+    month_data = None
+    if view == "month":
+        if anchor:
+            try:
+                ay, am = (int(x) for x in anchor.split("-")[:2])
+            except (ValueError, IndexError):
+                ay, am = today.year, today.month
+        else:
+            ay, am = today.year, today.month
+        month_data = cv.build_month(window_events, year=ay, month=am, today=today)
+
+    list_groups = cv.build_list(window_events, today=today) if view == "list" else None
+    if view == "list" and list_groups is not None:
+        if date:
+            list_groups = [g for g in list_groups if g["date"] == date]
+        if period:
+            for g in list_groups:
+                g["events"] = [
+                    e for e in g["events"]
+                    if cv.classify_period(datetime.fromtimestamp(int(e["start_ts"])).hour) == period
+                ]
+            list_groups = [g for g in list_groups if g["events"]]
+
+    heatmap = cv.build_heatmap(window_events) if view == "free" else None
+
+    feed_items = None
+    if view == "feed":
+        feed_items = cv.build_feed(guide_db.list_activities(conn, limit=100), now_ts=int(time.time()))
 
     return templates.TemplateResponse(
         "events.html",
@@ -1609,6 +1618,14 @@ async def events_page(request: Request, err: str | None = None, msg: str | None 
             "week_board": week_board,
             "now_ts": int(time.time()),
             "base_url": BASE_URL,
+            "view": view,
+            "month": month_data,
+            "list_groups": list_groups,
+            "heatmap": heatmap,
+            "feed_items": feed_items,
+            "anchor": anchor or "",
+            "active_date": date or "",
+            "active_period": period or "",
         },
     )
 
@@ -1659,7 +1676,7 @@ async def events_new(request: Request):
     start_ts, start_text = parsed
 
     now_ts = int(time.time())
-    until_ts = int((datetime.now() + timedelta(days=5)).timestamp())
+    until_ts = int((datetime.now() + timedelta(days=BOOKING_WINDOW_DAYS)).timestamp())
     if start_ts < now_ts or start_ts > until_ts:
         _audit(
             "event_create_failed_time_out_of_range",
@@ -1669,7 +1686,7 @@ async def events_new(request: Request):
             location=location,
             nickname=nickname,
         )
-        return RedirectResponse(url="/events?err=只允许预约未来五天内的活动", status_code=303)
+        return RedirectResponse(url="/events?err=只允许预约未来30天内的活动", status_code=303)
     if not location:
         _audit("event_create_failed_no_location", request=request, start_text=start_text, nickname=nickname)
         return RedirectResponse(url="/events?err=请填写地点", status_code=303)
@@ -1687,6 +1704,15 @@ async def events_new(request: Request):
         start_text=start_text,
         location=location,
         nickname=nickname,
+    )
+    guide_db.insert_activity(
+        conn,
+        event_id=event_id,
+        action="create",
+        actor=nickname,
+        location=location,
+        start_text=start_text,
+        ts=int(time.time()),
     )
     _audit(
         "event_create",
@@ -1720,6 +1746,13 @@ async def events_delete(request: Request, event_id: int):
         host_nickname=(event or {}).get("host_nickname") or (event or {}).get("nickname"),
         participants_count=len((event or {}).get("participants") or []),
     )
+    if event:
+        guide_db.insert_activity(
+            conn, event_id=event_id, action="delete",
+            actor=(event.get("host_nickname") or event.get("nickname") or ""),
+            location=event.get("location", ""), start_text=event.get("start_text", ""),
+            ts=int(time.time()),
+        )
     return RedirectResponse(url="/?msg=已删除", status_code=303)
 
 
@@ -1759,6 +1792,13 @@ async def events_join(request: Request, event_id: int):
         is_participant=(nickname in participants) if event else None,
     )
     
+    if success and event:
+        guide_db.insert_activity(
+            conn, event_id=event_id, action="join", actor=nickname,
+            location=event.get("location", ""), start_text=event.get("start_text", ""),
+            ts=int(time.time()),
+        )
+
     if success:
         return RedirectResponse(
             url=_append_query_param(next_url, "msg", message), status_code=303
@@ -1801,6 +1841,13 @@ async def events_leave(request: Request, event_id: int):
         is_participant=(nickname in participants) if event else None,
     )
     
+    if success and event:
+        guide_db.insert_activity(
+            conn, event_id=event_id, action="leave", actor=nickname,
+            location=event.get("location", ""), start_text=event.get("start_text", ""),
+            ts=int(time.time()),
+        )
+
     if success:
         return RedirectResponse(
             url=_append_query_param(next_url, "msg", message), status_code=303
@@ -2107,8 +2154,10 @@ def api_events():
         if _EVENTS_CLEANUP_LOCK.acquire(blocking=False):
             try:
                 if now_ts - _EVENTS_LAST_CLEANUP_TS > 120:
-                    # Cleanup only events before today (date-based expiration)
-                    guide_db.cleanup_expired_events(conn, now_ts=today_start_ts, keep_limit=5)
+                    # Cleanup events older than retention window + prune old feed activities
+                    cutoff_ts = _retention_cutoff_ts()
+                    guide_db.cleanup_expired_events(conn, cutoff_ts=cutoff_ts)
+                    guide_db.prune_activities(conn, cutoff_ts=cutoff_ts)
                     _EVENTS_LAST_CLEANUP_TS = now_ts
             finally:
                 _EVENTS_CLEANUP_LOCK.release()
@@ -2127,11 +2176,10 @@ def api_events():
 @app.get("/api/week-board")
 # 村历数据接口（供前端 2s 轮询）
 def api_week_board():
+    import calendar_views as cv
+
     conn = get_conn()
     today = datetime.now()
-    today_date = today.date()
-    today_start_ts = _today_start_ts()
-
     week_start_dt = _start_of_week(today)
     week_end_dt = week_start_dt + timedelta(days=7) - timedelta(seconds=1)
     week_events = guide_db.list_events_between(
@@ -2139,36 +2187,22 @@ def api_week_board():
         start_ts=int(week_start_dt.timestamp()),
         end_ts=int(week_end_dt.timestamp()),
     )
-
-    week_events_by_date: dict = {}
-    for e in week_events:
-        event_dt = datetime.fromtimestamp(int(e["start_ts"]))
-        key = event_dt.date()
-        week_events_by_date.setdefault(key, []).append((event_dt, e))
-
-    week_board: list[dict[str, Any]] = []
-    for i in range(7):
-        day_dt = week_start_dt + timedelta(days=i)
-        day_date = day_dt.date()
-        day_events = sorted(week_events_by_date.get(day_date, []), key=lambda item: item[0])
-        items: list[dict[str, Any]] = []
-        for event_dt, e in day_events:
-            items.append({
-                "period": _format_period(event_dt.hour),
-                "location": e["location"],
-                "time_text": event_dt.strftime("%H:%M"),
-                "full_time": e["start_text"],
-                "is_active": int(e["start_ts"]) >= today_start_ts,
-                "detail_url": f"/events/{e['id']}",
-            })
-        day_title = f"{day_dt.month}.{day_dt.day}（周{_WEEKDAY_LABELS[day_dt.weekday()]}）"
-        week_board.append({
-            "title": day_title,
-            "items": items,
-            "is_today": day_date == today_date,
-        })
-
+    week_board = cv.build_week(
+        week_events, today=today.date(), now_ts=_today_start_ts()
+    )
     return {"week_board": week_board}
+
+
+@app.get("/api/feed")
+# 动态流数据接口（供前端 5s 轮询）
+def api_feed():
+    import calendar_views as cv
+
+    conn = get_conn()
+    cutoff = _retention_cutoff_ts()
+    guide_db.prune_activities(conn, cutoff_ts=cutoff)
+    items = cv.build_feed(guide_db.list_activities(conn, limit=100), now_ts=int(time.time()))
+    return {"feed": items}
 
 
 if __name__ == "__main__":

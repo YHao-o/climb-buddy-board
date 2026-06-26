@@ -1,0 +1,32 @@
+<section class="month">
+  <div class="month__bar">
+    <a class="btn btn--ghost btn--small" href="/events?view=month&anchor={{ month.prev_anchor }}">‹</a>
+    <h2 class="month__title">{{ month.title }}</h2>
+    <a class="btn btn--ghost btn--small" href="/events?view=month&anchor={{ month.next_anchor }}">›</a>
+    {% if not month.is_current_month %}
+    <a class="btn btn--secondary btn--small month__today" href="/events?view=month">今天</a>
+    {% endif %}
+  </div>
+  <div class="month__grid">
+    {% for h in month.weekday_headers %}
+    <div class="month__head">{{ h }}</div>
+    {% endfor %}
+    {% for week in month.weeks %}
+      {% for cell in week %}
+      <a class="month__cell {{ 'month__cell--out' if not cell.in_month else '' }} {{ 'month__cell--today' if cell.is_today else '' }}"
+         href="/events?view=list&date={{ cell.date }}">
+        <div class="month__daynum">{{ cell.day_num }}</div>
+        {% if cell.dots %}
+        <div class="month__dots">
+          {% for p in cell.dots %}<span class="dot dot--{{ p }}"></span>{% endfor %}
+        </div>
+        {% endif %}
+        {% for it in cell.visible_items %}
+        <div class="month__evt"><span class="month__evt-time">{{ it.time_text }}</span>{{ it.location }}</div>
+        {% endfor %}
+        {% if cell.more_count > 0 %}<div class="month__more">+{{ cell.more_count }} 更多</div>{% endif %}
+      </a>
+      {% endfor %}
+    {% endfor %}
+  </div>
+</section>
