@@ -1,5 +1,39 @@
 {% extends "base.html" %}
 
+{# ===== 连锁品牌分组：分组标题（可点击折叠/展开） ===== #}
+{% macro group_header(g) %}
+<summary class="grouphd" id="grp-{{ g.id }}">
+  <div class="grouphd__main">
+    <span class="grouphd__chev" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </span>
+    <span class="grouphd__emoji">{{ g.emoji }}</span>
+    <h3 class="grouphd__name">{{ g.name }}</h3>
+    <span class="grouphd__count">{{ g.count }}</span>
+    {% if g.bring_newbie %}<span class="grouphd__badge">🧑‍🏫 老带新 · {{ g.bring_newbie }}</span>{% endif %}
+  </div>
+  {% if g.intro %}<p class="grouphd__intro">{{ g.intro }}</p>{% endif %}
+</summary>
+{% endmacro %}
+
+{# ===== 编辑模式下：把某个岩馆归入品牌 ===== #}
+{% macro assign_control(r, cats, asheet, q, column, value, view) %}
+<form method="post" action="/guide/chains/assign" class="assign">
+  <input type="hidden" name="gym" value="{{ r.get('名称') or r.get('具体位置') or '' }}" />
+  <input type="hidden" name="sheet" value="{{ asheet }}" />
+  <input type="hidden" name="q" value="{{ q }}" />
+  <input type="hidden" name="column" value="{{ column }}" />
+  <input type="hidden" name="value" value="{{ value }}" />
+  <input type="hidden" name="view" value="{{ view }}" />
+  <select class="select select--assign" name="cat_id" onchange="this.form.submit()" aria-label="归入品牌">
+    <option value="">📍 未分组</option>
+    {% for c in cats %}
+    <option value="{{ c.id }}" {% if c.id == r.get('__group_id__') %}selected{% endif %}>{{ c.emoji }} {{ c.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% endmacro %}
+
 {% block content %}
 {% if (not excel_exists) and (workbook.sheets|length == 0) %}
 <section class="callout callout--warn">
@@ -172,6 +206,104 @@
 </section>
 {% endif %}
 
+{% if is_gym_sheet and edit %}
+<section class="callout" id="chains">
+  <div class="callout__title">🏷️ 连锁品牌分组管理</div>
+  <div class="callout__body">
+    <p class="muted">岩馆会按下列分组在卡片/列表中归类。匹配优先级：先看「手动归入」，再按「关键词」或分组名命中岩馆名称。在每张岩馆卡片上可直接用下拉框手动归类。</p>
+
+    <div class="chainmgr">
+      {% for c in gym_categories %}
+      <div class="chaincat">
+        <div class="chaincat__bar">
+          <span class="chaincat__title">{{ c.emoji }} {{ c.name }}</span>
+          <span class="chaincat__order">
+            <form method="post" action="/guide/chains/{{ c.id }}/move" class="inline">
+              <input type="hidden" name="direction" value="up" />
+              <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+              <input type="hidden" name="q" value="{{ q }}" />
+              <input type="hidden" name="column" value="{{ column }}" />
+              <input type="hidden" name="value" value="{{ value }}" />
+              <input type="hidden" name="view" value="{{ view }}" />
+              <button class="iconbtn" type="submit" title="上移">▲</button>
+            </form>
+            <form method="post" action="/guide/chains/{{ c.id }}/move" class="inline">
+              <input type="hidden" name="direction" value="down" />
+              <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+              <input type="hidden" name="q" value="{{ q }}" />
+              <input type="hidden" name="column" value="{{ column }}" />
+              <input type="hidden" name="value" value="{{ value }}" />
+              <input type="hidden" name="view" value="{{ view }}" />
+              <button class="iconbtn" type="submit" title="下移">▼</button>
+            </form>
+          </span>
+        </div>
+        <form method="post" action="/guide/chains/{{ c.id }}/update" class="chaincat__form">
+          <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+          <input type="hidden" name="q" value="{{ q }}" />
+          <input type="hidden" name="column" value="{{ column }}" />
+          <input type="hidden" name="value" value="{{ value }}" />
+          <input type="hidden" name="view" value="{{ view }}" />
+          <div class="chaincat__grid">
+            <label class="field field--emoji">
+              <span class="field__label">图标</span>
+              <input class="input" name="emoji" value="{{ c.emoji }}" maxlength="6" />
+            </label>
+            <label class="field field--grow">
+              <span class="field__label">分组名称</span>
+              <input class="input" name="name" value="{{ c.name }}" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field__label">关键词（逗号 / 空格分隔，用于自动归类）</span>
+            <input class="input" name="keywords" value="{{ c.keywords|join('，') }}" placeholder="如 香蕉，banana" />
+          </label>
+          <label class="field">
+            <span class="field__label">老带新说明（显示在分组标题）</span>
+            <input class="input" name="bring_newbie" value="{{ c.bring_newbie }}" placeholder="如 可以 / 未知" />
+          </label>
+          <label class="field">
+            <span class="field__label">简介（可选，显示在分组标题下）</span>
+            <textarea class="input" name="intro" rows="2">{{ c.intro }}</textarea>
+          </label>
+          <div class="chaincat__actions">
+            <button class="btn btn--primary btn--small" type="submit">💾 保存</button>
+          </div>
+        </form>
+        <div class="chaincat__foot">
+          <span class="muted small">手动归入：{{ c.manual_gyms|join('、') if c.manual_gyms else '（无，靠关键词自动匹配）' }}</span>
+          <form method="post" action="/guide/chains/{{ c.id }}/delete" class="inline"
+            data-confirm="确认删除分组「{{ c.name }}」？&#10;该分组下的岩馆会回到未分组。">
+            <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+            <input type="hidden" name="q" value="{{ q }}" />
+            <input type="hidden" name="column" value="{{ column }}" />
+            <input type="hidden" name="value" value="{{ value }}" />
+            <input type="hidden" name="view" value="{{ view }}" />
+            <button class="linkbtn linkbtn--danger" type="submit">删除分组</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="/guide/chains/new" class="chainnew">
+      <input type="hidden" name="sheet" value="{{ active_sheet }}" />
+      <input type="hidden" name="q" value="{{ q }}" />
+      <input type="hidden" name="column" value="{{ column }}" />
+      <input type="hidden" name="value" value="{{ value }}" />
+      <input type="hidden" name="view" value="{{ view }}" />
+      <div class="chainnew__title">➕ 新增分组</div>
+      <div class="chainnew__row">
+        <input class="input chainnew__emoji" name="emoji" placeholder="🧗" maxlength="6" />
+        <input class="input" name="name" placeholder="分组名称（如 香蕉攀岩）" />
+        <input class="input" name="keywords" placeholder="关键词（如 香蕉，banana）" />
+        <button class="btn btn--secondary btn--small" type="submit">新增</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 {# 预览图仅用于“其他设备/攀岩鞋”，其他表不展示这个上传提示（避免误导） #}
 {% if is_preview_sheet %}
 <section class="callout">
@@ -224,7 +356,24 @@
 </section>
 {% else %}
 
+{# 岩馆按连锁品牌分组；其他表用单一伪分组（none）保持原样 #}
+{% set render_groups = gym_groups if (is_gym_sheet and gym_groups) else [ none ] %}
+
+{% if is_gym_sheet and gym_groups and (gym_groups|length > 1) %}
+<div class="groupbar" data-groupbar>
+  <span class="groupbar__hint">共 {{ gym_groups|length }} 个分组</span>
+  <div class="groupbar__btns">
+    <button class="btn btn--ghost btn--small" type="button" data-groups="open">▾ 展开全部</button>
+    <button class="btn btn--ghost btn--small" type="button" data-groups="close">▸ 收起全部</button>
+  </div>
+</div>
+{% endif %}
+
 {% if view == "table" %}
+{% for g in render_groups %}
+{% set grp_rows = g.rows if g else rows %}
+{% if (g is none) or (g.count > 0) %}
+{% if g is not none %}<details class="group" open>{{ group_header(g) }}<div class="group__body">{% endif %}
 <section class="tablewrap">
   <table class="table">
     <thead>
@@ -235,6 +384,9 @@
         {% if edit %}
         <th class="table__th table__th--img">操作</th>
         {% endif %}
+        {% if is_gym_sheet and edit %}
+        <th class="table__th">归入品牌</th>
+        {% endif %}
         {% if sheet %}
         {% for c in sheet.columns %}
         <th class="table__th">{{ c }}</th>
@@ -243,7 +395,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for r in rows %}
+      {% for r in grp_rows %}
       <tr>
         {% if is_preview_sheet %}
         <td class="table__td table__td--img">
@@ -274,6 +426,9 @@
             <button class="linkbtn" type="submit">删除</button>
           </form>
           </td>
+          {% endif %}
+          {% if is_gym_sheet and edit %}
+          <td class="table__td">{{ assign_control(r, gym_categories, active_sheet, q, column, value, view) }}</td>
           {% endif %}
           {% if sheet %}
           {% for c in sheet.columns %}
@@ -308,9 +463,16 @@
     </tbody>
   </table>
 </section>
+{% if g is not none %}</div></details>{% endif %}
+{% endif %}
+{% endfor %}
 {% else %}
+{% for g in render_groups %}
+{% set grp_rows = g.rows if g else rows %}
+{% if (g is none) or (g.count > 0) %}
+{% if g is not none %}<details class="group" open>{{ group_header(g) }}<div class="group__body">{% endif %}
 <section class="cards">
-  {% for r in rows %}
+  {% for r in grp_rows %}
   <article class="card">
     {% if is_preview_sheet %}
     {% set imgs = r.get('__row_images__') or [] %}
@@ -339,6 +501,9 @@
           data-confirm="确认删除这条记录？&#10;{{ (ns.items|join('；') if ns.items|length > 0 else '（无内容）') }}">
           <button class="btn btn--secondary btn--small" type="submit">🗑️ 删除</button>
         </form>
+        {% if is_gym_sheet %}
+        <span class="card__assign">{{ assign_control(r, gym_categories, active_sheet, q, column, value, view) }}</span>
+        {% endif %}
     </div>
     {% endif %}
     <dl class="kv">
@@ -380,8 +545,23 @@
   </article>
   {% endfor %}
 </section>
+{% if g is not none %}</div></details>{% endif %}
+{% endif %}
+{% endfor %}
 {% endif %}
 
 {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // 分组「展开全部 / 收起全部」
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-groups]')
+    if (!btn) return
+    var open = btn.getAttribute('data-groups') === 'open'
+    document.querySelectorAll('details.group').forEach(function (d) { d.open = open })
+  })
+</script>
 {% endblock %}

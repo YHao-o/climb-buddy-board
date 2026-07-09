@@ -3460,6 +3460,191 @@ form.inline {
 .feed__item--delete { opacity:.65; }
 
 
+/* ============ 连锁品牌分组（岩馆） ============ */
+/* 展开/收起全部 工具条 */
+.groupbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+.groupbar__hint { font-size: 13px; color: var(--text-muted); }
+.groupbar__btns { display: inline-flex; gap: 8px; }
+
+/* 单个可折叠分组 */
+.group {
+  margin: 14px 0;
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent-mint);
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.group:first-of-type { margin-top: 6px; }
+.group[open] { box-shadow: var(--shadow-card); }
+
+.group__body {
+  padding: 4px 14px 14px;
+  animation: groupReveal 0.28s var(--ease-smooth);
+}
+.group__body .cards,
+.group__body .tablewrap { margin-top: 6px; }
+@keyframes groupReveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 分组标题（summary，可点击） */
+.grouphd {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 12px 16px;
+  transition: background 0.15s var(--ease-smooth);
+}
+.grouphd::-webkit-details-marker { display: none; }
+.grouphd:hover { background: rgba(78, 205, 196, 0.06); }
+.group[open] > .grouphd { border-bottom: 1px solid var(--border-subtle); }
+
+.grouphd__chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: transform 0.22s var(--ease-bounce), color 0.15s;
+}
+.group:not([open]) > .grouphd .grouphd__chev { transform: rotate(-90deg); }
+.grouphd:hover .grouphd__chev { color: var(--accent-mint); }
+
+.grouphd__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.grouphd__emoji { font-size: 22px; line-height: 1; }
+.grouphd__name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.grouphd__count {
+  min-width: 24px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: rgba(78, 205, 196, 0.18);
+  color: var(--accent-mint);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.grouphd__badge {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 217, 61, 0.14);
+  color: var(--accent-gold);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.grouphd__intro {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+/* 卡片/表格里的“归入品牌”下拉 */
+.assign { display: inline-flex; margin: 0; }
+.select--assign {
+  height: auto;
+  padding: 5px 26px 5px 10px;
+  font-size: 13px;
+  min-width: 130px;
+}
+.card__assign { display: inline-flex; align-items: center; }
+.card__assign .select--assign { width: 100%; }
+
+/* 分组管理面板 */
+.chainmgr {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+.chaincat {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chaincat__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.chaincat__title { font-weight: 700; color: var(--text-primary); }
+.chaincat__order { display: inline-flex; gap: 4px; }
+.iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-smooth);
+}
+.iconbtn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-glow);
+  background: rgba(78, 205, 196, 0.12);
+}
+.chaincat__form { display: flex; flex-direction: column; gap: 8px; }
+.chaincat__grid { display: flex; gap: 8px; }
+.field--emoji { width: 72px; flex: none; }
+.field--grow { flex: 1; }
+.chaincat__actions { display: flex; justify-content: flex-end; }
+.chaincat__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.small { font-size: 12px; }
+.linkbtn--danger { color: var(--accent-coral); }
+.linkbtn--danger:hover { color: #ff8a8a; }
+
+.chainnew {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+.chainnew__title { font-weight: 700; margin-bottom: 8px; color: var(--text-primary); }
+.chainnew__row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chainnew__row .input { flex: 1; min-width: 120px; }
+.chainnew__emoji { flex: none !important; width: 64px; }
+
+@media (max-width: 640px) {
+  .grouphd__badge { margin-left: 0; }
+  .chainmgr { grid-template-columns: 1fr; }
+}
+
+
 
 
 
