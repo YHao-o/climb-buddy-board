@@ -24,6 +24,7 @@ from markupsafe import Markup, escape
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import db as guide_db
+import chains
 
 
 ROOT = Path(__file__).resolve().parent
@@ -36,7 +37,7 @@ DOCS_DIR = ROOT / "library_files"
 CONTRIB_DIR = ROOT / "contribute"
 # 站点基础地址（用于生成邀请/复制链接）
 #BASE_URL ="https://panyanfor.fun"
-BASE_URL = "http:120.79.176.134:8000"
+BASE_URL = "http://120.79.176.134:8000"
 
 # 审计日志（按 IP 记录关键操作）
 LOG_DIR = ROOT / "logs"
@@ -801,6 +802,10 @@ def guide(
         ri = all_row_images.get(rid, []) if rid else []
         enriched_rows.append({**r, "__image__": img, "__row_images__": ri})
 
+    # 岩馆按连锁品牌分组（卡片/列表都用）
+    is_gym_sheet = (active_sheet == chains.GYM_SHEET)
+    gym_categories: list[dict[str, Any]] = []
+    gym_groups: list[dict[str, Any]] | None = None
     try:
         shoes_text, shoes_lines, shoes_version = _load_setting_lines(
             conn, key=SETTING_SHOES_TIPS, default_lines=DEFAULT_SHOES_TIPS
@@ -808,6 +813,9 @@ def guide(
         ticket_text, ticket_lines, ticket_version = _load_setting_lines(
             conn, key=SETTING_TICKET_TIPS, default_lines=DEFAULT_TICKET_TIPS
         )
+        if is_gym_sheet:
+            gym_categories = chains.load_categories(conn)
+            gym_groups = chains.group_rows(enriched_rows, gym_categories)
     finally:
         conn.close()
 
@@ -820,6 +828,9 @@ def guide(
             "active_sheet": _safe_sheet_name(active_sheet),
             "sheet": sd,
             "rows": enriched_rows,
+            "is_gym_sheet": is_gym_sheet,
+            "gym_categories": gym_categories,
+            "gym_groups": gym_groups,
             "q": q or "",
             "column": column or "",
             "value": value or "",
@@ -1197,6 +1208,126 @@ async def update_guide_settings(request: Request):
     if not (ok_shoes and ok_ticket):
         params.append(f"err={_urlencode('内容已被其他人更新，请刷新后再试')}")
     return RedirectResponse(url=f"/guide?{'&'.join(params)}", status_code=303)
+
+
+# ============ 连锁品牌分组管理 ============
+
+def _chains_redirect(form, *, msg: str = "", err: str = "", anchor: str = "chains"):
+    """分组操作后跳回岩馆指南页（保留视图/筛选状态，停留在编辑模式）。"""
+    extra: list[str] = []
+    if msg:
+        extra.append(f"msg={_urlencode(msg)}")
+    if err:
+        extra.append(f"err={_urlencode(err)}")
+    url = _build_guide_return_url(
+        sheet=str(form.get("sheet") or chains.GYM_SHEET),
+        q=str(form.get("q") or ""),
+        column=str(form.get("column") or ""),
+        value=str(form.get("value") or ""),
+        view=str(form.get("view") or "cards"),
+        edit="1",
+        extra_params=extra,
+        anchor=anchor,
+    )
+    return RedirectResponse(url=url, status_code=303)
+
+
+def _split_keywords(raw: str) -> list[str]:
+    # 支持中英文逗号、顿号、空格分隔
+    parts = re.split(r"[,，、\s]+", str(raw or "").strip())
+    return [p for p in parts if p]
+
+
+@app.post("/guide/chains/new")
+# 新建分组
+async def chains_new(request: Request):
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+    emoji = str(form.get("emoji") or "").strip()
+    keywords = _split_keywords(str(form.get("keywords") or ""))
+    if not name:
+        return _chains_redirect(form, err="请填写分组名称")
+    conn = get_conn()
+    try:
+        cat_id = chains.create_category(conn, name=name, emoji=emoji, keywords=keywords)
+    finally:
+        conn.close()
+    _audit("chains_new", request=request, cat_id=cat_id, name=name)
+    return _chains_redirect(form, msg=f"已新增分组「{name}」")
+
+
+@app.post("/guide/chains/{cat_id}/update")
+# 编辑分组
+async def chains_update(request: Request, cat_id: str):
+    form = await request.form()
+    name = str(form.get("name") or "").strip()
+    emoji = str(form.get("emoji") or "").strip()
+    keywords = _split_keywords(str(form.get("keywords") or ""))
+    intro = str(form.get("intro") or "")
+    bring_newbie = str(form.get("bring_newbie") or "")
+    conn = get_conn()
+    try:
+        ok = chains.update_category(
+            conn,
+            cat_id=cat_id,
+            name=name,
+            emoji=emoji,
+            keywords=keywords,
+            intro=intro,
+            bring_newbie=bring_newbie,
+        )
+    finally:
+        conn.close()
+    _audit("chains_update", request=request, cat_id=cat_id, ok=ok)
+    if not ok:
+        return _chains_redirect(form, err="分组不存在或已被删除")
+    return _chains_redirect(form, msg="已保存分组")
+
+
+@app.post("/guide/chains/{cat_id}/delete")
+# 删除分组
+async def chains_delete(request: Request, cat_id: str):
+    form = await request.form()
+    conn = get_conn()
+    try:
+        ok = chains.delete_category(conn, cat_id=cat_id)
+    finally:
+        conn.close()
+    _audit("chains_delete", request=request, cat_id=cat_id, ok=ok)
+    return _chains_redirect(form, msg="已删除分组" if ok else "", err="" if ok else "分组不存在")
+
+
+@app.post("/guide/chains/{cat_id}/move")
+# 调整分组顺序
+async def chains_move(request: Request, cat_id: str):
+    form = await request.form()
+    direction = str(form.get("direction") or "").strip()
+    if direction not in ("up", "down"):
+        return _chains_redirect(form, err="方向无效")
+    conn = get_conn()
+    try:
+        ok = chains.move_category(conn, cat_id=cat_id, direction=direction)
+    finally:
+        conn.close()
+    _audit("chains_move", request=request, cat_id=cat_id, direction=direction, ok=ok)
+    return _chains_redirect(form)
+
+
+@app.post("/guide/chains/assign")
+# 把岩馆归入某分组
+async def chains_assign(request: Request):
+    form = await request.form()
+    gym = str(form.get("gym") or "").strip()
+    cat_id = str(form.get("cat_id") or "").strip()
+    if not gym:
+        return _chains_redirect(form, err="缺少岩馆标识")
+    conn = get_conn()
+    try:
+        chains.assign_gym(conn, gym=gym, cat_id=cat_id)
+    finally:
+        conn.close()
+    _audit("chains_assign", request=request, gym=gym, cat_id=cat_id)
+    return _chains_redirect(form, msg=f"已更新「{gym}」的分组")
 
 
 def _normalize_map_url(value: str) -> str:

@@ -809,6 +809,45 @@ def update_setting_safe(
             return True
         return False
 
+
+def list_settings_by_prefix(
+    conn: sqlite3.Connection, *, prefix: str
+) -> list[dict[str, Any]]:
+    """Return all settings whose key starts with the given prefix."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT key, value, version FROM settings WHERE key LIKE ? ESCAPE '\\' ORDER BY key",
+        (prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
+    )
+    return [
+        {"key": r["key"], "value": r["value"], "version": int(r["version"])}
+        for r in cur.fetchall()
+    ]
+
+
+def put_setting(conn: sqlite3.Connection, *, key: str, value: str) -> None:
+    """Upsert a setting (no optimistic locking; bumps version)."""
+    with transaction(conn) as cur:
+        cur.execute(
+            """
+            INSERT INTO settings(key, value, version, updated_at)
+            VALUES(?, ?, 1, datetime('now'))
+            ON CONFLICT(key) DO UPDATE
+                SET value=excluded.value,
+                    version=version+1,
+                    updated_at=datetime('now')
+            """,
+            (key, value),
+        )
+
+
+def delete_setting(conn: sqlite3.Connection, *, key: str) -> bool:
+    """Delete a setting by key. Returns True if a row was removed."""
+    with transaction(conn) as cur:
+        cur.execute("DELETE FROM settings WHERE key=?", (key,))
+        return cur.rowcount > 0
+
+
 # ============ Row Images ============
 
 def insert_row_image(conn: sqlite3.Connection, *, row_id: int, filename: str, original_name: str) -> int:
